@@ -1,0 +1,114 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* Changing the default fontFamily to Poppins */
+  --font-sans: "Poppins", sans-serif;
+
+  /* Marca — constante nos dois temas */
+  --color-primary: #ed6842;
+  --color-primary-dark: #d45a2f;
+
+  /* Tokens semânticos (light por padrão; sobrescritos em .dark) */
+  --color-background: #ffffff;
+  --color-foreground: #111827;
+
+  --color-surface: #ffffff;
+  --color-surface-muted: #f9fafb;
+  --color-surface-elevated: #ffffff;
+
+  --color-border: #e5e7eb;
+  --color-border-muted: #f3f4f6;
+
+  --color-text: #111827;
+  --color-text-muted: #4b5563;
+  --color-text-subtle: #6b7280;
+  --color-text-inverted: #ffffff;
+
+  --color-card: #ffffff;
+  --color-card-foreground: #111827;
+  --color-muted-foreground: #6b7280;
+}
+
+/* Sobrescrita dos tokens no tema dark */
+.dark {
+  --color-background: #0b0f17;
+  --color-foreground: #e5e7eb;
+
+  --color-surface: #111827;
+  --color-surface-muted: #0f172a;
+  --color-surface-elevated: #1f2937;
+
+  --color-border: #1f2937;
+  --color-border-muted: #111827;
+
+  --color-text: #f3f4f6;
+  --color-text-muted: #cbd5e1;
+  --color-text-subtle: #94a3b8;
+  --color-text-inverted: #0b0f17;
+
+  --color-card: #111827;
+  --color-card-foreground: #f3f4f6;
+  --color-muted-foreground: #94a3b8;
+
+  color-scheme: dark;
+}
+
+/* Cor de fundo padrão segue o token */
+html,
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+}
+
+/* Smooth scrolling */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-surface-muted);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #ed6842;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #d45a2f;
+}
+
+/* Swiper slide */
+.swiper-slide {
+  max-width: fit-content;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease-out;
+}
+
+/* Focus visible improvements */
+*:focus-visible {
+  outline: 2px solid #ed6842;
+  outline-offset: 2px;
+}
