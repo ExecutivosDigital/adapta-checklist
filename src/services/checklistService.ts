@@ -103,6 +103,44 @@ export async function saveChecklistItems(
   });
 }
 
+/** Endpoint de upload de arquivos do monolito (`adapta-api`). */
+const FILE_UPLOAD_ENDPOINT = "/file";
+
+/**
+ * Anexa uma foto a um item do checklist (offline-safe). A imagem capturada
+ * (data URL base64) entra na fila offline: ao reconectar, sobe pelo endpoint
+ * de arquivos (`POST /file`, campo `file`) e a URL retornada é gravada no item
+ * via `PATCH .../itens`. Em MOCK, retorna uma URL fake e não toca a fila.
+ *
+ * @returns a URL otimista (data URL no offline; URL fake no MOCK) só pra preview.
+ */
+export async function uploadItemPhoto(
+  checklistId: string,
+  itemId: string,
+  photoDataUrl: string,
+): Promise<string> {
+  if (MOCK) {
+    return `https://mock.local/uploads/${itemId}-${Date.now()}.jpg`;
+  }
+  await enqueueMutation({
+    endpoint: `${BASE}/${checklistId}/itens`,
+    method: "PATCH",
+    body: { itens: [{ id: itemId, fotoUrl: "" }] },
+    kind: "checklist.itemPhoto",
+    upload: {
+      endpoint: FILE_UPLOAD_ENDPOINT,
+      field: "file",
+      dataUrl: photoDataUrl,
+      fileName: `checklist-${itemId}.jpg`,
+      mimeType: "image/jpeg",
+      // body.itens[0].fotoUrl recebe a URL retornada pelo upload.
+      urlField: "itens.0.fotoUrl",
+    },
+  });
+  // Preview otimista: mostramos a própria captura até a fila drenar.
+  return photoDataUrl;
+}
+
 /** Conclui o checklist (offline-safe). Dispara o efeito de disponibilidade no back. */
 export async function concludeChecklist(
   id: string,
