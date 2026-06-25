@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createAFazer, listDriverVehicles } from "@/services/checklistService";
 import type { DriverVehicle } from "@/types/checklist.types";
+import { matchesSearch } from "@/utils/normalizeSearch";
 
 /** Reconhecimento de fala do navegador (Web Speech API) — sem chave externa. */
 function getSpeechRecognition(): (new () => SpeechRecognitionLike) | null {
@@ -46,8 +47,15 @@ export default function AFazerPage() {
   }, []);
 
   const filtered = useMemo(() => {
-    const q = search.trim().toUpperCase();
-    return q ? vehicles.filter((v) => v.plate.toUpperCase().includes(q)) : vehicles.slice(0, 30);
+    const q = search.trim();
+    return q
+      ? vehicles.filter(
+          (v) =>
+            matchesSearch(v.plate, q) ||
+            matchesSearch(v.brand ?? "", q) ||
+            matchesSearch(v.model ?? "", q),
+        )
+      : vehicles.slice(0, 30);
   }, [vehicles, search]);
 
   const speechAvailable = useMemo(() => getSpeechRecognition() != null, []);
