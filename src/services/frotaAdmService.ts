@@ -234,6 +234,18 @@ export async function createTemplateAdmin(
   return data;
 }
 
+/** Edita um template existente — `PATCH /fleet-checklists/templates/:id`. */
+export async function updateTemplateAdmin(
+  id: string,
+  input: Partial<CreateTemplateInput> & { ativo?: boolean },
+): Promise<FleetChecklistTemplate> {
+  const { data } = await api.patch<FleetChecklistTemplate>(
+    `/fleet-checklists/templates/${id}`,
+    input,
+  );
+  return data;
+}
+
 // ───────────────────────── Chegadas ─────────────────────────
 
 /**

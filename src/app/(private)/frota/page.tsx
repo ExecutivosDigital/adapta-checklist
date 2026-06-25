@@ -24,6 +24,7 @@ import {
 import {
   approveMaintenanceRequest,
   createTemplateAdmin,
+  updateTemplateAdmin,
   listChecklistsEmAndamento,
   listMaintenanceRequests,
   listTemplatesAdmin,
@@ -100,6 +101,7 @@ export default function FrotaPage() {
   const [regAlvo, setRegAlvo] = useState<GerenciadoraPendente | null>(null);
   const [novoTpl, setNovoTpl] = useState(false);
   const [verTpl, setVerTpl] = useState<FleetChecklistTemplate | null>(null);
+  const [editTpl, setEditTpl] = useState<FleetChecklistTemplate | null>(null);
 
   useEffect(() => {
     void resolveAdminTenant().finally(() => setTenantReady(true));
@@ -367,16 +369,33 @@ export default function FrotaPage() {
               </li>
             ))}
           </ul>
+          <Button
+            className="mt-4 w-full"
+            variant="outline"
+            onClick={() => {
+              setEditTpl(verTpl);
+              setVerTpl(null);
+            }}
+          >
+            Editar template
+          </Button>
         </Modal>
       )}
 
-      {/* Modal: novo template */}
-      {novoTpl && (
+      {/* Modal: novo / editar template */}
+      {(novoTpl || editTpl) && (
         <NovoTemplate
-          onClose={() => setNovoTpl(false)}
-          onCreated={(t) => {
-            setTemplates((p) => [...p, t]);
+          editing={editTpl}
+          onClose={() => {
             setNovoTpl(false);
+            setEditTpl(null);
+          }}
+          onSaved={(t) => {
+            setTemplates((p) =>
+              editTpl ? p.map((x) => (x.id === t.id ? t : x)) : [...p, t],
+            );
+            setNovoTpl(false);
+            setEditTpl(null);
           }}
         />
       )}
@@ -439,14 +458,18 @@ function RegistrarGerenciadora({
 
 function NovoTemplate({
   onClose,
-  onCreated,
+  onSaved,
+  editing,
 }: {
   onClose: () => void;
-  onCreated: (t: FleetChecklistTemplate) => void;
+  onSaved: (t: FleetChecklistTemplate) => void;
+  editing?: FleetChecklistTemplate | null;
 }) {
-  const [nome, setNome] = useState("");
-  const [tipo, setTipo] = useState<FleetChecklistTipo>("DIARIO");
-  const [itens, setItens] = useState<{ titulo: string; bloqueante: boolean }[]>([]);
+  const [nome, setNome] = useState(editing?.nome ?? "");
+  const [tipo, setTipo] = useState<FleetChecklistTipo>(editing?.tipo ?? "DIARIO");
+  const [itens, setItens] = useState<{ titulo: string; bloqueante: boolean }[]>(
+    editing?.itens.map((it) => ({ titulo: it.titulo, bloqueante: !!it.bloqueante })) ?? [],
+  );
   const [itemTitulo, setItemTitulo] = useState("");
   const [itemBloq, setItemBloq] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -459,11 +482,11 @@ function NovoTemplate({
     setItemBloq(false);
   }
 
-  async function criar() {
+  async function salvar() {
     setErro(null);
     setSalvando(true);
     try {
-      const created = await createTemplateAdmin({
+      const payload = {
         tipo,
         nome: nome.trim(),
         periodicidadeDias: tipo === "DIARIO" ? 1 : tipo === "CALIBRAGEM" ? 10 : undefined,
@@ -472,17 +495,27 @@ function NovoTemplate({
           titulo: it.titulo,
           bloqueante: it.bloqueante,
         })),
-      });
-      onCreated(created);
+      };
+      const saved = editing
+        ? await updateTemplateAdmin(editing.id, payload)
+        : await createTemplateAdmin(payload);
+      onSaved(saved);
     } catch (e) {
-      setErro(extractApiError(e, "Não foi possível criar o template."));
+      setErro(
+        extractApiError(
+          e,
+          editing
+            ? "Não foi possível salvar o template."
+            : "Não foi possível criar o template.",
+        ),
+      );
     } finally {
       setSalvando(false);
     }
   }
 
   return (
-    <Modal title="Novo template" onClose={onClose}>
+    <Modal title={editing ? "Editar template" : "Novo template"} onClose={onClose}>
       <label className="text-sm text-text-muted">Nome</label>
       <Input className="mb-3 mt-1" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Diário" />
 
@@ -536,9 +569,13 @@ function NovoTemplate({
       <Button
         className="mt-4 w-full"
         disabled={!nome.trim() || itens.length === 0 || salvando}
-        onClick={criar}
+        onClick={salvar}
       >
-        {salvando ? "Criando…" : "Criar template"}
+        {salvando
+          ? "Salvando…"
+          : editing
+            ? "Salvar alterações"
+            : "Criar template"}
       </Button>
     </Modal>
   );
