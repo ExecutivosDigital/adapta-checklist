@@ -66,11 +66,18 @@ export async function listChecklists(params?: {
   return data;
 }
 
-/** Carrega um checklist por id (detalhe / continuar / ver). */
+/**
+ * Carrega um checklist por id (detalhe / continuar / ver).
+ *
+ * As rotas do MOTORISTA (`/driver/fleet-checklists`) não expõem `GET /:id`
+ * (só a controller de Frota/ADM com RBAC tem). Como o `list` já devolve cada
+ * checklist completo (com itens, via include do back), buscamos na lista e
+ * filtramos pelo id no cliente.
+ */
 export async function getChecklist(id: string): Promise<FleetChecklist | null> {
   if (MOCK) return findMockChecklist(id) ?? null;
-  const { data } = await api.get<FleetChecklist>(`${BASE}/${id}`);
-  return data;
+  const { data } = await api.get<FleetChecklist[]>(BASE);
+  return data.find((c) => c.id === id) ?? null;
 }
 
 /** Abre um checklist a partir de um template (com os itens). */
