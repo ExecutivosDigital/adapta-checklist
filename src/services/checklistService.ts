@@ -1,4 +1,4 @@
-import { api } from "@/lib/api";
+import { api, getAdminTenantId } from "@/lib/api";
 import { enqueueMutation } from "@/lib/offline-queue";
 import {
   MOCK,
@@ -76,6 +76,13 @@ export async function listChecklists(params?: {
  */
 export async function getChecklist(id: string): Promise<FleetChecklist | null> {
   if (MOCK) return findMockChecklist(id) ?? null;
+  // ADM (tenant resolvido): a controller de Frota expõe `GET /fleet-checklists/:id`.
+  // Necessário para a aba "Chegadas" abrir o checklist do motorista e fazer junto.
+  if (getAdminTenantId()) {
+    const { data } = await api.get<FleetChecklist>(`/fleet-checklists/${id}`);
+    return data ?? null;
+  }
+  // Motorista: as rotas `/driver/...` não expõem GET /:id — filtra na lista.
   const { data } = await api.get<FleetChecklist[]>(BASE);
   return data.find((c) => c.id === id) ?? null;
 }

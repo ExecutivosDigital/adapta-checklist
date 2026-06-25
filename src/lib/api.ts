@@ -9,6 +9,14 @@ const hubBaseURL = process.env.NEXT_PUBLIC_HUB_API_URL; // Hub (auth)
 let authTokenGetter: (() => string | undefined) | null = null;
 let unauthorizedHandler: (() => void) | null = null;
 
+// Tenant da Frota/ADM. As rotas ADM do monolito (`/fleet-checklists`,
+// `/fleet-maintenance-requests`, `/vehicles/availability`…) leem o tenant do
+// header `x-tenant-id` (ver CurrentTenantId.decorator no back). Resolvemos uma
+// vez via `GET /driver/me` (ou cache) e guardamos aqui; o interceptor injeta o
+// header em toda chamada do `api`. As rotas do MOTORISTA (`/driver/...`) ignoram
+// esse header (resolvem o tenant pelo CPF do token), então mandar não atrapalha.
+let tenantId: string | null = null;
+
 export function registerAuthTokenGetter(getter: () => string | undefined) {
   authTokenGetter = getter;
 }
@@ -17,11 +25,23 @@ export function registerUnauthorizedHandler(handler: () => void) {
   unauthorizedHandler = handler;
 }
 
+/** Define (ou limpa, com `null`) o tenant ADM injetado em `x-tenant-id`. */
+export function setAdminTenantId(id: string | null) {
+  tenantId = id;
+}
+
+export function getAdminTenantId(): string | null {
+  return tenantId;
+}
+
 function withInterceptors(instance: AxiosInstance): AxiosInstance {
   instance.interceptors.request.use((config) => {
     const token = authTokenGetter?.();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
+    }
+    if (tenantId && !config.headers["x-tenant-id"]) {
+      config.headers["x-tenant-id"] = tenantId;
     }
     return config;
   });

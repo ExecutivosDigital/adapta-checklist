@@ -93,6 +93,21 @@ export interface DriverVehicle {
   currentOdometer: number | null;
 }
 
+/**
+ * Identidade do motorista logado resolvida pelo back a partir do CPF do token.
+ * Usada para descobrir o `tenantId` que as rotas ADM da Frota exigem em
+ * `x-tenant-id`. Endpoint: `GET /driver/me`.
+ */
+export interface DriverMe {
+  companyId: string;
+  tenantId: string;
+  motorista?: {
+    id?: string;
+    nome?: string;
+    documentNumber?: string;
+  } | null;
+}
+
 export interface AFazerInput {
   vehicleId: string;
   description: string;
