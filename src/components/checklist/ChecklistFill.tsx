@@ -1,10 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Camera, Check, CircleSlash, TriangleAlert, X } from "lucide-react";
+import { Camera, Check, CircleSlash, Loader2, TriangleAlert, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { concludeChecklist } from "@/services/checklistService";
+import { PhotoCaptureView } from "@/components/camera/PhotoCaptureView";
+import {
+  concludeChecklist,
+  uploadItemPhoto,
+} from "@/services/checklistService";
 import type {
   FleetChecklist,
   FleetChecklistItemStatus,
@@ -41,14 +45,32 @@ export function ChecklistFill({ checklist, readOnly, onDone }: ChecklistFillProp
   const [km, setKm] = useState(checklist.odometer ? String(checklist.odometer) : "");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ bloqueantes: string[] } | null>(null);
+  /** Id do item que está com a câmera aberta (null = câmera fechada). */
+  const [cameraItemId, setCameraItemId] = useState<string | null>(null);
+  /** Ids de itens com foto enfileirada/subindo. */
+  const [uploadingIds, setUploadingIds] = useState<Set<string>>(new Set());
 
   function setItem(id: string, patch: Partial<SaveChecklistItemInput>) {
     setAnswers((prev) => ({ ...prev, [id]: { ...prev[id], ...patch, id } }));
   }
 
-  function onPhoto(id: string, file?: File) {
-    if (!file) return;
-    setItem(id, { fotoUrl: URL.createObjectURL(file) });
+  async function handlePhotoCapture(itemId: string, photoDataUrl: string) {
+    setCameraItemId(null);
+    // Preview otimista imediato (data URL da captura).
+    setItem(itemId, { fotoUrl: photoDataUrl });
+    setUploadingIds((prev) => new Set(prev).add(itemId));
+    try {
+      // Enfileira o upload (offline-safe). A URL real é persistida no item
+      // quando a fila drenar; aqui só guardamos a preview otimista.
+      const url = await uploadItemPhoto(checklist.id, itemId, photoDataUrl);
+      setItem(itemId, { fotoUrl: url });
+    } finally {
+      setUploadingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
+    }
   }
 
   const respondidos = useMemo(
@@ -120,33 +142,52 @@ export function ChecklistFill({ checklist, readOnly, onDone }: ChecklistFillProp
               </div>
 
               {!readOnly && a?.status === "NAO_CONFORME" && (
-                <div className="mt-2 space-y-2">
-                  <Input
-                    value={a.observacoes ?? ""}
-                    onChange={(e) => setItem(item.id, { observacoes: e.target.value })}
-                    placeholder="Observação (opcional)"
-                  />
-                  <label className="flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-text-muted">
-                    <Camera className="h-4 w-4" />
-                    {a.fotoUrl ? "Trocar foto" : "Anexar foto"}
-                    <input
-                      type="file"
-                      accept="image/*"
-                      capture="environment"
-                      className="hidden"
-                      onChange={(e) => onPhoto(item.id, e.target.files?.[0])}
-                    />
-                  </label>
-                </div>
+                <Input
+                  className="mt-2"
+                  value={a.observacoes ?? ""}
+                  onChange={(e) => setItem(item.id, { observacoes: e.target.value })}
+                  placeholder="Observação (opcional)"
+                />
               )}
 
+              {!readOnly &&
+                (() => {
+                  const naoConforme = a?.status === "NAO_CONFORME";
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => setCameraItemId(item.id)}
+                      className={`mt-2 flex w-fit items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition active:scale-95 ${
+                        naoConforme
+                          ? "border-red-300 bg-red-50 text-red-700"
+                          : "border-border text-text-muted"
+                      }`}
+                    >
+                      {uploadingIds.has(item.id) ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Camera className="h-4 w-4" />
+                      )}
+                      {a?.fotoUrl ? "Trocar foto" : "Anexar foto"}
+                      {naoConforme && !a?.fotoUrl && (
+                        <span className="text-xs font-semibold">(recomendado)</span>
+                      )}
+                    </button>
+                  );
+                })()}
+
               {a?.fotoUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={a.fotoUrl}
-                  alt="evidência"
-                  className="mt-2 h-24 w-24 rounded-lg object-cover"
-                />
+                <div className="mt-2">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={a.fotoUrl}
+                    alt="evidência"
+                    className="h-24 w-24 rounded-lg object-cover"
+                  />
+                  {uploadingIds.has(item.id) && (
+                    <p className="mt-1 text-xs text-text-muted">Enviando foto…</p>
+                  )}
+                </div>
               )}
             </li>
           );
@@ -158,6 +199,17 @@ export function ChecklistFill({ checklist, readOnly, onDone }: ChecklistFillProp
           <Button className="w-full" disabled={busy || respondidos === 0} onClick={handleConclude}>
             {busy ? "Concluindo…" : `Concluir (${respondidos}/${checklist.itens.length})`}
           </Button>
+        </div>
+      )}
+
+      {cameraItemId && (
+        <div className="fixed inset-0 z-[60] bg-black">
+          <PhotoCaptureView
+            overlayMode="document-rectangle"
+            title="Foto da evidência"
+            onCapture={(dataUrl) => void handlePhotoCapture(cameraItemId, dataUrl)}
+            onClose={() => setCameraItemId(null)}
+          />
         </div>
       )}
 

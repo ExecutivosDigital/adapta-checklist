@@ -5,6 +5,7 @@ import {
   registerUnauthorizedHandler,
 } from "@/lib/api";
 import { clearOfflineStorage } from "@/lib/offline-store";
+import { clearAdminTenant } from "@/services/frotaAdmService";
 import * as authService from "@/services/authService";
 import {
   AuthContact,
@@ -81,6 +82,8 @@ export function AuthContextProvider({ children }: { children: React.ReactNode })
     setToken(null);
     setUser(null);
     setStatus("unauthenticated");
+    // Limpa o tenant ADM (x-tenant-id) resolvido via /driver/me.
+    clearAdminTenant();
     // LGPD (A4 — ver NOTES): apaga IndexedDB do app inteiro no logout.
     void clearOfflineStorage();
   }, [cookies]);

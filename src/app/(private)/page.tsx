@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import {
+  CalendarCheck,
   CalendarDays,
   ClipboardCheck,
   ClipboardList,
@@ -111,6 +112,9 @@ export default function ChecklistsHomePage() {
         <Shortcut href="/calendario" icon={CalendarDays} label="Calendário" />
         <Shortcut href="/historico" icon={History} label="Histórico" />
         <Shortcut href="/gr" icon={ShieldCheck} label="Liberação" />
+        {/* T3.2 — Aderência + Calibragem (ADM) */}
+        <Shortcut href="/aderencia" icon={CalendarCheck} label="Aderência" />
+        <Shortcut href="/calibragem" icon={Gauge} label="Calibragem" />
       </div>
 
       <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-text-muted">

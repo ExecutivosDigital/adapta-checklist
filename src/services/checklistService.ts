@@ -1,4 +1,4 @@
-import { api } from "@/lib/api";
+import { api, getAdminTenantId } from "@/lib/api";
 import { enqueueMutation } from "@/lib/offline-queue";
 import {
   MOCK,
@@ -66,11 +66,25 @@ export async function listChecklists(params?: {
   return data;
 }
 
-/** Carrega um checklist por id (detalhe / continuar / ver). */
+/**
+ * Carrega um checklist por id (detalhe / continuar / ver).
+ *
+ * As rotas do MOTORISTA (`/driver/fleet-checklists`) não expõem `GET /:id`
+ * (só a controller de Frota/ADM com RBAC tem). Como o `list` já devolve cada
+ * checklist completo (com itens, via include do back), buscamos na lista e
+ * filtramos pelo id no cliente.
+ */
 export async function getChecklist(id: string): Promise<FleetChecklist | null> {
   if (MOCK) return findMockChecklist(id) ?? null;
-  const { data } = await api.get<FleetChecklist>(`${BASE}/${id}`);
-  return data;
+  // ADM (tenant resolvido): a controller de Frota expõe `GET /fleet-checklists/:id`.
+  // Necessário para a aba "Chegadas" abrir o checklist do motorista e fazer junto.
+  if (getAdminTenantId()) {
+    const { data } = await api.get<FleetChecklist>(`/fleet-checklists/${id}`);
+    return data ?? null;
+  }
+  // Motorista: as rotas `/driver/...` não expõem GET /:id — filtra na lista.
+  const { data } = await api.get<FleetChecklist[]>(BASE);
+  return data.find((c) => c.id === id) ?? null;
 }
 
 /** Abre um checklist a partir de um template (com os itens). */
@@ -94,6 +108,44 @@ export async function saveChecklistItems(
     body: input,
     kind: "checklist.saveItems",
   });
+}
+
+/** Endpoint de upload de arquivos do monolito (`adapta-api`). */
+const FILE_UPLOAD_ENDPOINT = "/file";
+
+/**
+ * Anexa uma foto a um item do checklist (offline-safe). A imagem capturada
+ * (data URL base64) entra na fila offline: ao reconectar, sobe pelo endpoint
+ * de arquivos (`POST /file`, campo `file`) e a URL retornada é gravada no item
+ * via `PATCH .../itens`. Em MOCK, retorna uma URL fake e não toca a fila.
+ *
+ * @returns a URL otimista (data URL no offline; URL fake no MOCK) só pra preview.
+ */
+export async function uploadItemPhoto(
+  checklistId: string,
+  itemId: string,
+  photoDataUrl: string,
+): Promise<string> {
+  if (MOCK) {
+    return `https://mock.local/uploads/${itemId}-${Date.now()}.jpg`;
+  }
+  await enqueueMutation({
+    endpoint: `${BASE}/${checklistId}/itens`,
+    method: "PATCH",
+    body: { itens: [{ id: itemId, fotoUrl: "" }] },
+    kind: "checklist.itemPhoto",
+    upload: {
+      endpoint: FILE_UPLOAD_ENDPOINT,
+      field: "file",
+      dataUrl: photoDataUrl,
+      fileName: `checklist-${itemId}.jpg`,
+      mimeType: "image/jpeg",
+      // body.itens[0].fotoUrl recebe a URL retornada pelo upload.
+      urlField: "itens.0.fotoUrl",
+    },
+  });
+  // Preview otimista: mostramos a própria captura até a fila drenar.
+  return photoDataUrl;
 }
 
 /** Conclui o checklist (offline-safe). Dispara o efeito de disponibilidade no back. */

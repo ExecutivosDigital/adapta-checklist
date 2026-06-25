@@ -9,6 +9,7 @@ import {
 import type {
   DrainResult,
   MutationMethod,
+  PendingFileUpload,
   PendingMutation,
 } from "@/types/offline.types";
 
@@ -19,6 +20,8 @@ interface EnqueueInput {
   headers?: Record<string, string>;
   /** Identifica o tipo de operação (ex: "trip.delivery", "offer.accept"). */
   kind: string;
+  /** Upload de arquivo (foto) a subir antes do request principal. */
+  upload?: PendingFileUpload;
 }
 
 /**
@@ -44,6 +47,7 @@ export async function enqueueMutation(
     body: input.body,
     headers: input.headers,
     kind: input.kind,
+    upload: input.upload,
     createdAt: Date.now(),
     attempts: 0,
     status: "pending",
@@ -75,11 +79,54 @@ async function registerBackgroundSync(): Promise<void> {
   }
 }
 
+/** Converte um data URL (`data:...;base64,...`) num Blob pra upload multipart. */
+function dataUrlToBlob(dataUrl: string, mimeType: string): Blob {
+  const base64 = dataUrl.includes(",") ? dataUrl.split(",")[1] : dataUrl;
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mimeType });
+}
+
+/** Grava `value` em `obj` seguindo um dot-path (ex: `itens.0.fotoUrl`). */
+function setByPath(obj: unknown, path: string, value: unknown): void {
+  const keys = path.split(".");
+  let cursor = obj as Record<string, unknown>;
+  for (let i = 0; i < keys.length - 1; i++) {
+    const k = keys[i];
+    if (typeof cursor[k] !== "object" || cursor[k] === null) cursor[k] = {};
+    cursor = cursor[k] as Record<string, unknown>;
+  }
+  cursor[keys[keys.length - 1]] = value;
+}
+
+/**
+ * Sobe a foto pelo endpoint de arquivos e devolve a URL. O backend
+ * (`POST /file`) recebe multipart no campo configurado e responde `{ url }`.
+ */
+async function uploadFile(upload: PendingFileUpload): Promise<string> {
+  const blob = dataUrlToBlob(upload.dataUrl, upload.mimeType);
+  const form = new FormData();
+  form.append(upload.field, blob, upload.fileName);
+  const { data } = await api.post<{ url: string; fullUrl?: string }>(
+    upload.endpoint,
+    form,
+  );
+  return data.fullUrl ?? data.url;
+}
+
 async function executeMutation(m: PendingMutation): Promise<void> {
+  let body = m.body;
+  // Se há foto na fila: sobe primeiro, injeta a URL no body e segue.
+  if (m.upload) {
+    const url = await uploadFile(m.upload);
+    body = m.body ? JSON.parse(JSON.stringify(m.body)) : {};
+    setByPath(body, m.upload.urlField, url);
+  }
   await api.request({
     url: m.endpoint,
     method: m.method,
-    data: m.body,
+    data: body,
     headers: {
       ...m.headers,
       "Idempotency-Key": m.idempotencyKey,

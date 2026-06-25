@@ -17,6 +17,7 @@ import type {
   FleetChecklist,
   FleetChecklistTemplate,
 } from "@/types/checklist.types";
+import { matchesSearch } from "@/utils/normalizeSearch";
 
 export default function NovoChecklistPage() {
   const router = useRouter();
@@ -46,9 +47,14 @@ export default function NovoChecklistPage() {
   }, []);
 
   const filteredVehicles = useMemo(() => {
-    const q = search.trim().toUpperCase();
+    const q = search.trim();
     return q
-      ? vehicles.filter((v) => v.plate.toUpperCase().includes(q))
+      ? vehicles.filter(
+          (v) =>
+            matchesSearch(v.plate, q) ||
+            matchesSearch(v.brand ?? "", q) ||
+            matchesSearch(v.model ?? "", q),
+        )
       : vehicles.slice(0, 30);
   }, [vehicles, search]);
 

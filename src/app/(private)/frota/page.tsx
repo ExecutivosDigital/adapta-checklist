@@ -1,13 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { v4 as uuid } from "uuid";
 import {
   Check,
   ClipboardList,
-  Lock,
-  LockOpen,
   LogOut,
   Plus,
   Trash2,
@@ -19,17 +16,27 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
-import { MOCK_TEMPLATES } from "@/services/checklistMock";
+import { extractApiError } from "@/lib/api";
 import {
-  MOCK_AFAZER,
-  MOCK_DISPONIBILIDADE,
   MOCK_GERENCIADORA,
-  STATUS_VEICULO_LABEL,
-  type AFazerItem,
-  type DisponVeiculo,
   type GerenciadoraPendente,
 } from "@/services/frotaGrMock";
+import {
+  approveMaintenanceRequest,
+  createTemplateAdmin,
+  updateTemplateAdmin,
+  listChecklistsEmAndamento,
+  listMaintenanceRequests,
+  listTemplatesAdmin,
+  listVehicleAvailability,
+  rejectMaintenanceRequest,
+  resolveAdminTenant,
+  type MaintenanceRequest,
+  type VehicleAvailability,
+  type VehicleStatus,
+} from "@/services/frotaAdmService";
 import type {
+  FleetChecklist,
   FleetChecklistTemplate,
   FleetChecklistTipo,
 } from "@/types/checklist.types";
@@ -44,11 +51,22 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "templates", label: "Templates" },
 ];
 
-const STATUS_COLOR: Record<DisponVeiculo["status"], string> = {
+const STATUS_COLOR: Record<VehicleStatus, string> = {
   DISPONIVEL: "bg-green-100 text-green-700",
   EM_VIAGEM: "bg-blue-100 text-blue-700",
   MANUTENCAO: "bg-amber-100 text-amber-700",
   BLOQUEADO: "bg-red-100 text-red-700",
+  ACIDENTE: "bg-red-100 text-red-700",
+  INATIVO: "bg-gray-200 text-gray-600",
+};
+
+const STATUS_VEICULO_LABEL: Record<VehicleStatus, string> = {
+  DISPONIVEL: "Disponível",
+  EM_VIAGEM: "Em viagem",
+  MANUTENCAO: "Manutenção",
+  BLOQUEADO: "Bloqueado",
+  ACIDENTE: "Acidente",
+  INATIVO: "Inativo",
 };
 
 const TIPO_LABEL: Record<FleetChecklistTipo, string> = {
@@ -58,42 +76,77 @@ const TIPO_LABEL: Record<FleetChecklistTipo, string> = {
   OUTRO: "Outro",
 };
 
-const CHEGADAS = [
-  { id: "ch-1", motorista: "Luiz Eduardo Reitz", placa: "KAF2D34", hora: "08:40", viagemId: "8321", checklistId: "chk-chegada-1" },
-  { id: "ch-2", motorista: "Marcos Antônio Rodrigues", placa: "AVC9F66", hora: "10:15", viagemId: "8344", checklistId: "chk-chegada-2" },
-];
-
 export default function FrotaPage() {
   const router = useRouter();
   const { user, logout } = useAuth();
   const [tab, setTab] = useState<Tab>("chegadas");
 
-  const [afazer, setAfazer] = useState<AFazerItem[]>(MOCK_AFAZER);
-  const [dispon, setDispon] = useState<DisponVeiculo[]>(MOCK_DISPONIBILIDADE);
-  const [gerenc, setGerenc] = useState<GerenciadoraPendente[]>(MOCK_GERENCIADORA);
-  const [templates, setTemplates] = useState<FleetChecklistTemplate[]>(MOCK_TEMPLATES);
+  // Tenant ADM (x-tenant-id) — resolvido uma vez antes de carregar as abas.
+  const [tenantReady, setTenantReady] = useState(false);
+
+  // Dados reais por aba.
+  const [chegadas, setChegadas] = useState<FleetChecklist[]>([]);
+  const [afazer, setAfazer] = useState<MaintenanceRequest[]>([]);
+  const [dispon, setDispon] = useState<VehicleAvailability[]>([]);
+  const [templates, setTemplates] = useState<FleetChecklistTemplate[]>([]);
+
+  // Gerenciadora: ainda mock (depende da feature de conjunto/GR — Etapa 8).
+  const [gerenc] = useState<GerenciadoraPendente[]>(MOCK_GERENCIADORA);
+
+  const [loading, setLoading] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [acaoId, setAcaoId] = useState<string | null>(null);
 
   // Modais
   const [regAlvo, setRegAlvo] = useState<GerenciadoraPendente | null>(null);
   const [novoTpl, setNovoTpl] = useState(false);
   const [verTpl, setVerTpl] = useState<FleetChecklistTemplate | null>(null);
+  const [editTpl, setEditTpl] = useState<FleetChecklistTemplate | null>(null);
 
-  function decide(id: string, status: AFazerItem["status"]) {
-    setAfazer((p) => p.map((a) => (a.id === id ? { ...a, status } : a)));
-  }
+  useEffect(() => {
+    void resolveAdminTenant().finally(() => setTenantReady(true));
+  }, []);
 
-  function travar(placa: string) {
-    setDispon((p) =>
-      p.map((v) =>
-        v.placa === placa
-          ? {
-              ...v,
-              status: v.status === "BLOQUEADO" ? "DISPONIVEL" : "BLOQUEADO",
-              obs: v.status === "BLOQUEADO" ? undefined : "Travado pela Frota",
-            }
-          : v,
-      ),
-    );
+  const carregar = useCallback(
+    async (which: Tab) => {
+      if (!tenantReady) return;
+      setErro(null);
+      setLoading(true);
+      try {
+        if (which === "chegadas") {
+          setChegadas(await listChecklistsEmAndamento());
+        } else if (which === "afazer") {
+          setAfazer(await listMaintenanceRequests({ status: "PENDING" }));
+        } else if (which === "dispon") {
+          setDispon(await listVehicleAvailability());
+        } else if (which === "templates") {
+          setTemplates(await listTemplatesAdmin());
+        }
+      } catch (e) {
+        setErro(extractApiError(e, "Não foi possível carregar os dados."));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [tenantReady],
+  );
+
+  useEffect(() => {
+    void carregar(tab);
+  }, [tab, carregar]);
+
+  async function decide(id: string, aprovar: boolean) {
+    setAcaoId(id);
+    try {
+      const updated = aprovar
+        ? await approveMaintenanceRequest(id)
+        : await rejectMaintenanceRequest(id);
+      setAfazer((p) => p.map((a) => (a.id === id ? { ...a, ...updated } : a)));
+    } catch (e) {
+      setErro(extractApiError(e, "Não foi possível registrar a decisão."));
+    } finally {
+      setAcaoId(null);
+    }
   }
 
   return (
@@ -128,67 +181,96 @@ export default function FrotaPage() {
       </div>
 
       <div className="p-4">
-        {tab === "chegadas" && (
+        {erro && tab !== "gerenc" && (
+          <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{erro}</p>
+        )}
+        {loading && tab !== "gerenc" && (
+          <p className="mb-3 text-sm text-text-muted">Carregando…</p>
+        )}
+
+        {tab === "chegadas" && !loading && (
           <ul className="space-y-2">
-            {CHEGADAS.map((c) => (
+            {chegadas.map((c) => (
               <li key={c.id} className="rounded-xl border border-border bg-surface p-4">
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-text">{c.motorista}</span>
-                  <span className="text-xs text-text-muted">{c.hora}</span>
+                  <span className="font-semibold text-text">{TIPO_LABEL[c.tipo]}</span>
+                  <span className="text-xs text-text-muted">
+                    {new Date(c.createdAt).toLocaleString("pt-BR")}
+                  </span>
                 </div>
-                <p className="text-sm text-text-muted">{c.placa} · viagem {c.viagemId}</p>
+                <p className="text-sm text-text-muted">
+                  Checklist em andamento · {c.itens.length} itens
+                </p>
                 <Button
                   variant="outline"
                   className="mt-2 w-full"
-                  onClick={() => router.push(`/checklist/${c.checklistId}`)}
+                  onClick={() => router.push(`/checklist/${c.id}`)}
                 >
                   Fazer checklist junto
                 </Button>
               </li>
             ))}
+            {chegadas.length === 0 && (
+              <p className="text-text-muted">Nenhum checklist em andamento.</p>
+            )}
           </ul>
         )}
 
-        {tab === "afazer" && (
+        {tab === "afazer" && !loading && (
           <ul className="space-y-2">
             {afazer.map((a) => (
               <li key={a.id} className="rounded-xl border border-border bg-surface p-4">
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-text">{a.placa}</span>
-                  <span className="text-xs text-text-muted">{a.quando}</span>
+                  <span className="font-semibold text-text">
+                    {a.vehicle?.plate ?? "Veículo"}
+                  </span>
+                  <span className="text-xs text-text-muted">
+                    {new Date(a.createdAt).toLocaleString("pt-BR")}
+                  </span>
                 </div>
-                <p className="text-sm text-text">{a.descricao}</p>
-                {a.status === "PENDENTE" ? (
+                <p className="text-sm text-text">{a.description ?? a.title}</p>
+                {a.status === "PENDING" ? (
                   <div className="mt-2 grid grid-cols-2 gap-2">
-                    <Button onClick={() => decide(a.id, "APROVADO")}>
+                    <Button disabled={acaoId === a.id} onClick={() => decide(a.id, true)}>
                       <Check className="mr-1 h-4 w-4" /> Aprovar
                     </Button>
-                    <Button variant="danger" onClick={() => decide(a.id, "REJEITADO")}>
+                    <Button
+                      variant="danger"
+                      disabled={acaoId === a.id}
+                      onClick={() => decide(a.id, false)}
+                    >
                       <X className="mr-1 h-4 w-4" /> Rejeitar
                     </Button>
                   </div>
                 ) : (
-                  <p className={`mt-2 text-sm font-semibold ${a.status === "APROVADO" ? "text-green-600" : "text-red-600"}`}>
-                    {a.status === "APROVADO" ? "Aprovado → vira OS" : "Rejeitado"}
+                  <p
+                    className={`mt-2 text-sm font-semibold ${
+                      a.status === "APPROVED" ? "text-green-600" : "text-red-600"
+                    }`}
+                  >
+                    {a.status === "APPROVED" ? "Aprovado → vira OS" : "Rejeitado"}
                   </p>
                 )}
               </li>
             ))}
+            {afazer.length === 0 && (
+              <p className="text-text-muted">Sem requisições pendentes. ✅</p>
+            )}
           </ul>
         )}
 
-        {tab === "dispon" && (
+        {tab === "dispon" && !loading && (
           <ul className="space-y-2">
             {dispon.map((v) => (
-              <li key={v.placa} className="rounded-xl border border-border bg-surface p-4">
+              <li key={v.id} className="rounded-xl border border-border bg-surface p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <TruckIcon className="h-5 w-5 text-text-muted" />
                     <div>
-                      <p className="font-semibold text-text">{v.placa}</p>
+                      <p className="font-semibold text-text">{v.plate}</p>
                       <p className="text-xs text-text-muted">
                         {v.tipo}
-                        {v.obs ? ` · ${v.obs}` : ""}
+                        {v.motivo ? ` · ${v.motivo}` : ""}
                       </p>
                     </div>
                   </div>
@@ -196,44 +278,39 @@ export default function FrotaPage() {
                     {STATUS_VEICULO_LABEL[v.status]}
                   </span>
                 </div>
-                {(v.status === "DISPONIVEL" || v.status === "BLOQUEADO") && (
-                  <Button
-                    variant={v.status === "BLOQUEADO" ? "outline" : "danger"}
-                    className="mt-2 w-full"
-                    onClick={() => travar(v.placa)}
-                  >
-                    {v.status === "BLOQUEADO" ? (
-                      <>
-                        <LockOpen className="mr-1 h-4 w-4" /> Liberar para operação
-                      </>
-                    ) : (
-                      <>
-                        <Lock className="mr-1 h-4 w-4" /> Travar para operação
-                      </>
-                    )}
-                  </Button>
-                )}
               </li>
             ))}
+            {dispon.length === 0 && (
+              <p className="text-text-muted">Nenhum veículo encontrado.</p>
+            )}
           </ul>
         )}
 
         {tab === "gerenc" && (
-          <ul className="space-y-2">
-            {gerenc.map((g) => (
-              <li key={`${g.cavalo}-${g.carreta}`} className="rounded-xl border border-border bg-surface p-4">
-                <p className="font-semibold text-text">{g.cavalo} + {g.carreta}</p>
-                <p className="text-sm text-text-muted">Gerenciadora: {g.gerenciadora}</p>
-                <Button variant="outline" className="mt-2 w-full" onClick={() => setRegAlvo(g)}>
-                  <Wrench className="mr-1 h-4 w-4" /> Registrar checklist (import)
-                </Button>
-              </li>
-            ))}
-            {gerenc.length === 0 && <p className="text-text-muted">Sem pendências. ✅</p>}
-          </ul>
+          <>
+            {/* TODO(Etapa 8): ligar no backend quando a feature de conjunto/GR
+                (vistoria cavalo+carreta + import do laudo da gerenciadora)
+                existir. Hoje é mock — não há endpoint real. */}
+            <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              Em breve — integração da gerenciadora chega na Etapa 8 (conjunto/GR).
+              Os dados abaixo são de demonstração.
+            </div>
+            <ul className="space-y-2">
+              {gerenc.map((g) => (
+                <li key={`${g.cavalo}-${g.carreta}`} className="rounded-xl border border-border bg-surface p-4">
+                  <p className="font-semibold text-text">{g.cavalo} + {g.carreta}</p>
+                  <p className="text-sm text-text-muted">Gerenciadora: {g.gerenciadora}</p>
+                  <Button variant="outline" className="mt-2 w-full" onClick={() => setRegAlvo(g)}>
+                    <Wrench className="mr-1 h-4 w-4" /> Registrar checklist (import)
+                  </Button>
+                </li>
+              ))}
+              {gerenc.length === 0 && <p className="text-text-muted">Sem pendências. ✅</p>}
+            </ul>
+          </>
         )}
 
-        {tab === "templates" && (
+        {tab === "templates" && !loading && (
           <>
             <ul className="space-y-2">
               {templates.map((t) => (
@@ -256,6 +333,9 @@ export default function FrotaPage() {
                   </button>
                 </li>
               ))}
+              {templates.length === 0 && (
+                <p className="text-text-muted">Nenhum template cadastrado.</p>
+              )}
             </ul>
             <Button className="mt-4 w-full" variant="outline" onClick={() => setNovoTpl(true)}>
               <Plus className="mr-1 h-4 w-4" /> Novo template
@@ -264,15 +344,12 @@ export default function FrotaPage() {
         )}
       </div>
 
-      {/* Modal: registrar checklist da gerenciadora */}
+      {/* Modal: registrar checklist da gerenciadora (mock — Etapa 8) */}
       {regAlvo && (
         <RegistrarGerenciadora
           alvo={regAlvo}
           onClose={() => setRegAlvo(null)}
-          onConfirm={() => {
-            setGerenc((p) => p.filter((x) => !(x.cavalo === regAlvo.cavalo && x.carreta === regAlvo.carreta)));
-            setRegAlvo(null);
-          }}
+          onConfirm={() => setRegAlvo(null)}
         />
       )}
 
@@ -292,16 +369,33 @@ export default function FrotaPage() {
               </li>
             ))}
           </ul>
+          <Button
+            className="mt-4 w-full"
+            variant="outline"
+            onClick={() => {
+              setEditTpl(verTpl);
+              setVerTpl(null);
+            }}
+          >
+            Editar template
+          </Button>
         </Modal>
       )}
 
-      {/* Modal: novo template */}
-      {novoTpl && (
+      {/* Modal: novo / editar template */}
+      {(novoTpl || editTpl) && (
         <NovoTemplate
-          onClose={() => setNovoTpl(false)}
-          onCreate={(t) => {
-            setTemplates((p) => [...p, t]);
+          editing={editTpl}
+          onClose={() => {
             setNovoTpl(false);
+            setEditTpl(null);
+          }}
+          onSaved={(t) => {
+            setTemplates((p) =>
+              editTpl ? p.map((x) => (x.id === t.id ? t : x)) : [...p, t],
+            );
+            setNovoTpl(false);
+            setEditTpl(null);
           }}
         />
       )}
@@ -364,16 +458,22 @@ function RegistrarGerenciadora({
 
 function NovoTemplate({
   onClose,
-  onCreate,
+  onSaved,
+  editing,
 }: {
   onClose: () => void;
-  onCreate: (t: FleetChecklistTemplate) => void;
+  onSaved: (t: FleetChecklistTemplate) => void;
+  editing?: FleetChecklistTemplate | null;
 }) {
-  const [nome, setNome] = useState("");
-  const [tipo, setTipo] = useState<FleetChecklistTipo>("DIARIO");
-  const [itens, setItens] = useState<{ titulo: string; bloqueante: boolean }[]>([]);
+  const [nome, setNome] = useState(editing?.nome ?? "");
+  const [tipo, setTipo] = useState<FleetChecklistTipo>(editing?.tipo ?? "DIARIO");
+  const [itens, setItens] = useState<{ titulo: string; bloqueante: boolean }[]>(
+    editing?.itens.map((it) => ({ titulo: it.titulo, bloqueante: !!it.bloqueante })) ?? [],
+  );
   const [itemTitulo, setItemTitulo] = useState("");
   const [itemBloq, setItemBloq] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
 
   function addItem() {
     if (!itemTitulo.trim()) return;
@@ -382,22 +482,40 @@ function NovoTemplate({
     setItemBloq(false);
   }
 
-  function criar() {
-    onCreate({
-      id: uuid(),
-      tipo,
-      nome: nome.trim(),
-      periodicidadeDias: tipo === "DIARIO" ? 1 : tipo === "CALIBRAGEM" ? 10 : null,
-      itens: itens.map((it, i) => ({
-        codigo: `IT${i + 1}`,
-        titulo: it.titulo,
-        bloqueante: it.bloqueante,
-      })),
-    });
+  async function salvar() {
+    setErro(null);
+    setSalvando(true);
+    try {
+      const payload = {
+        tipo,
+        nome: nome.trim(),
+        periodicidadeDias: tipo === "DIARIO" ? 1 : tipo === "CALIBRAGEM" ? 10 : undefined,
+        itens: itens.map((it, i) => ({
+          codigo: `IT${i + 1}`,
+          titulo: it.titulo,
+          bloqueante: it.bloqueante,
+        })),
+      };
+      const saved = editing
+        ? await updateTemplateAdmin(editing.id, payload)
+        : await createTemplateAdmin(payload);
+      onSaved(saved);
+    } catch (e) {
+      setErro(
+        extractApiError(
+          e,
+          editing
+            ? "Não foi possível salvar o template."
+            : "Não foi possível criar o template.",
+        ),
+      );
+    } finally {
+      setSalvando(false);
+    }
   }
 
   return (
-    <Modal title="Novo template" onClose={onClose}>
+    <Modal title={editing ? "Editar template" : "Novo template"} onClose={onClose}>
       <label className="text-sm text-text-muted">Nome</label>
       <Input className="mb-3 mt-1" value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Diário" />
 
@@ -446,8 +564,18 @@ function NovoTemplate({
         </Button>
       </div>
 
-      <Button className="mt-4 w-full" disabled={!nome.trim() || itens.length === 0} onClick={criar}>
-        Criar template
+      {erro && <p className="mt-3 text-sm text-red-600">{erro}</p>}
+
+      <Button
+        className="mt-4 w-full"
+        disabled={!nome.trim() || itens.length === 0 || salvando}
+        onClick={salvar}
+      >
+        {salvando
+          ? "Salvando…"
+          : editing
+            ? "Salvar alterações"
+            : "Criar template"}
       </Button>
     </Modal>
   );
