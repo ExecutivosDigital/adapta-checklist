@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Gauge,
   History,
+  Link2,
   Mic,
   Plus,
   Radio,
@@ -115,6 +116,8 @@ export default function ChecklistsHomePage() {
         <Shortcut href="/calendario" icon={CalendarDays} label="Calendário" />
         <Shortcut href="/historico" icon={History} label="Histórico" />
         <Shortcut href="/gr" icon={ShieldCheck} label="Liberação" />
+        {/* T8.2 — Vistoria do conjunto (cavalo + carreta) */}
+        <Shortcut href="/conjunto" icon={Link2} label="Conjunto" />
         {/* T3.2 — Aderência + Calibragem (ADM) */}
         <Shortcut href="/aderencia" icon={CalendarCheck} label="Aderência" />
         <Shortcut href="/calibragem" icon={Gauge} label="Calibragem" />
