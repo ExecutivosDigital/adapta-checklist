@@ -14,6 +14,7 @@ import {
   Radio,
   ShieldCheck,
   TriangleAlert,
+  Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
@@ -117,6 +118,8 @@ export default function ChecklistsHomePage() {
         {/* T3.2 — Aderência + Calibragem (ADM) */}
         <Shortcut href="/aderencia" icon={CalendarCheck} label="Aderência" />
         <Shortcut href="/calibragem" icon={Gauge} label="Calibragem" />
+        {/* T7.2 — Gastos da viagem + acerto/saldo */}
+        <Shortcut href="/acerto" icon={Wallet} label="Gastos" />
       </div>
 
       <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-text-muted">
