@@ -11,6 +11,7 @@ import {
   History,
   Mic,
   Plus,
+  Radio,
   ShieldCheck,
   TriangleAlert,
 } from "lucide-react";
@@ -109,6 +110,7 @@ export default function ChecklistsHomePage() {
 
       {/* Atalhos */}
       <div className="mb-6 grid grid-cols-3 gap-2">
+        <Shortcut href="/macros" icon={Radio} label="Macros" />
         <Shortcut href="/calendario" icon={CalendarDays} label="Calendário" />
         <Shortcut href="/historico" icon={History} label="Histórico" />
         <Shortcut href="/gr" icon={ShieldCheck} label="Liberação" />
