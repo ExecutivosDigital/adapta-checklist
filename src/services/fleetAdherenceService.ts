@@ -1,18 +1,18 @@
 import { api } from "@/lib/api";
 
 /**
- * T3.2 — Aderência (calendário do diário) + Status de calibragem — lado ADM.
+ * T3.2 — Aderência (calendário do diário) + Status de calibragem — app do MOTORISTA.
  *
- * Endpoints ADM do monolito (`adapta-api`, módulo tms/fleet-checklists). O
- * `x-tenant-id` é resolvido/injetado automaticamente pelo axios `api`
- * (interceptor em `src/lib/api.ts`, via `GET /driver/me`). Se algum dia for
- * preciso o tenant explícito aqui, chamar `GET /driver/me`
- * (`{ companyId, tenantId, motorista }`) num hook próprio.
+ * Usamos as rotas do MOTORISTA (`/driver/fleet-checklists/...`), autorizadas pelo
+ * CPF do token RS256 do Hub — NÃO as rotas ADM (`/fleet-checklists/...`), que
+ * exigem User RBAC (PermissionGuard) e devolveriam 401 pro token do motorista,
+ * derrubando a sessão pro login. O tenant é resolvido no back pelo próprio CPF,
+ * então não precisamos enviar `x-tenant-id`.
  *
  * O backend está sendo construído em paralelo, então os parsers abaixo blindam
  * a UI contra payload vazio/parcial: nunca confiamos em campos virem todos.
  */
-const BASE = "/fleet-checklists";
+const BASE = "/driver/fleet-checklists";
 
 // ── Tipos do contrato (T3.2) ──
 

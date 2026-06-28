@@ -28,8 +28,11 @@ import type {
 } from "@/types/expenses.types";
 import { matchesSearch } from "@/utils/normalizeSearch";
 
-const brl = (n: number) =>
-  n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const brl = (n: number | null | undefined) =>
+  (Number.isFinite(Number(n)) ? Number(n) : 0).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
 
 const TIPOS: {
   tipo: ExpenseTipo;
