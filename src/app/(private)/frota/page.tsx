@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Check,
@@ -23,13 +23,16 @@ import {
 } from "@/services/frotaGrMock";
 import {
   approveMaintenanceRequest,
+  aprovarChecklist,
   createTemplateAdmin,
   updateTemplateAdmin,
+  listChecklistsAguardandoAprovacao,
   listChecklistsEmAndamento,
   listMaintenanceRequests,
   listTemplatesAdmin,
   listVehicleAvailability,
   rejectMaintenanceRequest,
+  reprovarChecklist,
   resolveAdminTenant,
   type MaintenanceRequest,
   type VehicleAvailability,
@@ -42,10 +45,17 @@ import type {
   FleetChecklistTipoCampo,
 } from "@/types/checklist.types";
 
-type Tab = "chegadas" | "afazer" | "dispon" | "gerenc" | "templates";
+type Tab =
+  | "chegadas"
+  | "aprovacoes"
+  | "afazer"
+  | "dispon"
+  | "gerenc"
+  | "templates";
 
 const TABS: { id: Tab; label: string }[] = [
   { id: "chegadas", label: "Chegadas" },
+  { id: "aprovacoes", label: "Aprovações" },
   { id: "afazer", label: "A fazer" },
   { id: "dispon", label: "Disponibilidade" },
   { id: "gerenc", label: "Gerenciadora" },
@@ -77,6 +87,15 @@ const TIPO_LABEL: Record<FleetChecklistTipo, string> = {
   OUTRO: "Outro",
 };
 
+/** Data local (YYYY-MM-DD) de um ISO, no fuso do dispositivo — base do filtro por dia. */
+function localDay(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export default function FrotaPage() {
   const router = useRouter();
   const { user, logout } = useAuth();
@@ -87,6 +106,7 @@ export default function FrotaPage() {
 
   // Dados reais por aba.
   const [chegadas, setChegadas] = useState<FleetChecklist[]>([]);
+  const [aprovacoes, setAprovacoes] = useState<FleetChecklist[]>([]);
   const [afazer, setAfazer] = useState<MaintenanceRequest[]>([]);
   const [dispon, setDispon] = useState<VehicleAvailability[]>([]);
   const [templates, setTemplates] = useState<FleetChecklistTemplate[]>([]);
@@ -98,8 +118,14 @@ export default function FrotaPage() {
   const [erro, setErro] = useState<string | null>(null);
   const [acaoId, setAcaoId] = useState<string | null>(null);
 
+  // Filtros da aba "Chegadas".
+  const [chDay, setChDay] = useState("");
+  const [chVehicle, setChVehicle] = useState("all");
+  const [chMotorista, setChMotorista] = useState("all");
+
   // Modais
   const [regAlvo, setRegAlvo] = useState<GerenciadoraPendente | null>(null);
+  const [reprovarAlvo, setReprovarAlvo] = useState<FleetChecklist | null>(null);
   const [novoTpl, setNovoTpl] = useState(false);
   const [verTpl, setVerTpl] = useState<FleetChecklistTemplate | null>(null);
   const [editTpl, setEditTpl] = useState<FleetChecklistTemplate | null>(null);
@@ -116,6 +142,8 @@ export default function FrotaPage() {
       try {
         if (which === "chegadas") {
           setChegadas(await listChecklistsEmAndamento());
+        } else if (which === "aprovacoes") {
+          setAprovacoes(await listChecklistsAguardandoAprovacao());
         } else if (which === "afazer") {
           setAfazer(await listMaintenanceRequests({ status: "PENDING" }));
         } else if (which === "dispon") {
@@ -149,6 +177,57 @@ export default function FrotaPage() {
       setAcaoId(null);
     }
   }
+
+  async function aprovar(id: string) {
+    setErro(null);
+    setAcaoId(id);
+    try {
+      await aprovarChecklist(id);
+      setAprovacoes((p) => p.filter((c) => c.id !== id));
+    } catch (e) {
+      setErro(extractApiError(e, "Não foi possível aprovar o checklist."));
+    } finally {
+      setAcaoId(null);
+    }
+  }
+
+  async function reprovar(id: string, nota?: string) {
+    setErro(null);
+    setAcaoId(id);
+    try {
+      await reprovarChecklist(id, nota);
+      setAprovacoes((p) => p.filter((c) => c.id !== id));
+      setReprovarAlvo(null);
+    } catch (e) {
+      setErro(extractApiError(e, "Não foi possível reprovar o checklist."));
+    } finally {
+      setAcaoId(null);
+    }
+  }
+
+  // Opções de filtro derivadas das chegadas carregadas.
+  const chVehicleOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of chegadas) map.set(c.vehicleId, c.vehicle?.plate ?? c.vehicleId);
+    return [...map.entries()]
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  }, [chegadas]);
+
+  const chMotoristaOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of chegadas) if (c.motoristaNome?.trim()) set.add(c.motoristaNome.trim());
+    return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [chegadas]);
+
+  const chegadasFiltradas = useMemo(
+    () =>
+      chegadas
+        .filter((c) => chVehicle === "all" || c.vehicleId === chVehicle)
+        .filter((c) => chMotorista === "all" || c.motoristaNome === chMotorista)
+        .filter((c) => !chDay || localDay(c.createdAt) === chDay),
+    [chegadas, chVehicle, chMotorista, chDay],
+  );
 
   return (
     <div className="mx-auto min-h-screen max-w-2xl bg-background">
@@ -190,29 +269,141 @@ export default function FrotaPage() {
         )}
 
         {tab === "chegadas" && !loading && (
-          <ul className="space-y-2">
-            {chegadas.map((c) => (
-              <li key={c.id} className="rounded-xl border border-border bg-surface p-4">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-text">{TIPO_LABEL[c.tipo]}</span>
-                  <span className="text-xs text-text-muted">
-                    {new Date(c.createdAt).toLocaleString("pt-BR")}
-                  </span>
-                </div>
-                <p className="text-sm text-text-muted">
-                  Checklist em andamento · {c.itens.length} itens
-                </p>
-                <Button
-                  variant="outline"
-                  className="mt-2 w-full"
-                  onClick={() => router.push(`/checklist/${c.id}`)}
+          <>
+            {/* Filtros: dia, veículo e motorista */}
+            <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-text-muted">Dia</label>
+                <Input type="date" value={chDay} onChange={(e) => setChDay(e.target.value)} />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-text-muted">Veículo</label>
+                <select
+                  value={chVehicle}
+                  onChange={(e) => setChVehicle(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-text outline-none focus:border-primary"
                 >
-                  Fazer checklist junto
-                </Button>
-              </li>
-            ))}
-            {chegadas.length === 0 && (
-              <p className="text-text-muted">Nenhum checklist em andamento.</p>
+                  <option value="all">Todos</option>
+                  {chVehicleOptions.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-text-muted">Motorista</label>
+                <select
+                  value={chMotorista}
+                  onChange={(e) => setChMotorista(e.target.value)}
+                  className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-text outline-none focus:border-primary"
+                >
+                  <option value="all">Todos</option>
+                  {chMotoristaOptions.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            {chDay && (
+              <button
+                onClick={() => setChDay("")}
+                className="mb-3 text-xs font-medium text-primary hover:underline"
+              >
+                Limpar dia
+              </button>
+            )}
+
+            <ul className="space-y-2">
+              {chegadasFiltradas.map((c) => (
+                <li key={c.id} className="rounded-xl border border-border bg-surface p-4">
+                  <div className="flex items-center justify-between">
+                    <span className="font-semibold text-text">
+                      {c.vehicle?.plate ?? c.vehicleId}
+                    </span>
+                    <span className="text-xs text-text-muted">
+                      {new Date(c.createdAt).toLocaleString("pt-BR")}
+                    </span>
+                  </div>
+                  <p className="text-sm text-text-muted">
+                    {c.motoristaNome ? `${c.motoristaNome} · ` : ""}
+                    {TIPO_LABEL[c.tipo]} · {c.itens.length} itens
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="mt-2 w-full"
+                    onClick={() => router.push(`/checklist/${c.id}`)}
+                  >
+                    Fazer checklist junto
+                  </Button>
+                </li>
+              ))}
+              {chegadasFiltradas.length === 0 && (
+                <p className="text-text-muted">
+                  {chegadas.length === 0
+                    ? "Nenhum checklist em andamento."
+                    : "Nenhum checklist para os filtros selecionados."}
+                </p>
+              )}
+            </ul>
+          </>
+        )}
+
+        {tab === "aprovacoes" && !loading && (
+          <ul className="space-y-2">
+            {aprovacoes.map((c) => {
+              const plate = c.vehicle?.plate ?? c.vehicleId;
+              const model = c.vehicle?.model ?? null;
+              return (
+                <li
+                  key={c.id}
+                  className="rounded-xl border border-border bg-surface p-4"
+                >
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/checklist/${c.id}`)}
+                    className="w-full text-left"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="truncate font-semibold text-text">
+                        {c.motoristaNome ?? "Motorista"}
+                      </span>
+                      <span className="shrink-0 text-xs text-text-muted">
+                        {new Date(c.createdAt).toLocaleString("pt-BR")}
+                      </span>
+                    </div>
+                    <p className="text-sm text-text-muted">
+                      {plate}
+                      {model ? ` · ${model}` : ""} · {TIPO_LABEL[c.tipo]}
+                    </p>
+                    <p className="mt-1 text-xs text-primary">
+                      Ver itens do checklist
+                    </p>
+                  </button>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <Button
+                      disabled={acaoId === c.id}
+                      onClick={() => aprovar(c.id)}
+                    >
+                      <Check className="mr-1 h-4 w-4" /> Aprovar
+                    </Button>
+                    <Button
+                      variant="danger"
+                      disabled={acaoId === c.id}
+                      onClick={() => setReprovarAlvo(c)}
+                    >
+                      <X className="mr-1 h-4 w-4" /> Reprovar
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+            {aprovacoes.length === 0 && (
+              <p className="text-text-muted">
+                Nenhum checklist aguardando aprovação. ✅
+              </p>
             )}
           </ul>
         )}
@@ -345,6 +536,16 @@ export default function FrotaPage() {
         )}
       </div>
 
+      {/* Modal: reprovar checklist (nota opcional) */}
+      {reprovarAlvo && (
+        <ReprovarChecklist
+          alvo={reprovarAlvo}
+          saving={acaoId === reprovarAlvo.id}
+          onClose={() => setReprovarAlvo(null)}
+          onConfirm={(nota) => reprovar(reprovarAlvo.id, nota)}
+        />
+      )}
+
       {/* Modal: registrar checklist da gerenciadora (mock — Etapa 8) */}
       {regAlvo && (
         <RegistrarGerenciadora
@@ -452,6 +653,44 @@ function RegistrarGerenciadora({
       <Input className="mb-4 mt-1" type="date" value={validade} onChange={(e) => setValidade(e.target.value)} />
       <Button className="w-full" disabled={!protocolo || !validade} onClick={onConfirm}>
         Registrar
+      </Button>
+    </Modal>
+  );
+}
+
+function ReprovarChecklist({
+  alvo,
+  saving,
+  onClose,
+  onConfirm,
+}: {
+  alvo: FleetChecklist;
+  saving: boolean;
+  onClose: () => void;
+  onConfirm: (nota?: string) => void;
+}) {
+  const [nota, setNota] = useState("");
+  const plate = alvo.vehicle?.plate ?? alvo.vehicleId;
+  return (
+    <Modal title="Reprovar checklist" onClose={onClose}>
+      <p className="mb-3 text-sm text-text-muted">
+        {alvo.motoristaNome ?? "Motorista"} · {plate} · {TIPO_LABEL[alvo.tipo]}
+      </p>
+      <label className="text-sm text-text-muted">Nota (opcional)</label>
+      <textarea
+        value={nota}
+        onChange={(e) => setNota(e.target.value)}
+        rows={3}
+        placeholder="Motivo da reprovação"
+        className="mb-4 mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none focus:border-primary"
+      />
+      <Button
+        variant="danger"
+        className="w-full"
+        disabled={saving}
+        onClick={() => onConfirm(nota.trim() || undefined)}
+      >
+        {saving ? "Reprovando…" : "Confirmar reprovação"}
       </Button>
     </Modal>
   );

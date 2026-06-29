@@ -36,7 +36,18 @@ const TIPO_LABEL: Record<FleetChecklistTipo, string> = {
 };
 const STATUS_LABEL: Record<FleetChecklistStatus, string> = {
   EM_ANDAMENTO: "Em andamento",
+  AGUARDANDO_APROVACAO: "Aguardando aprovação",
   CONCLUIDO: "Concluído",
+  REPROVADO: "Reprovado",
+};
+const STATUS_VARIANT: Record<
+  FleetChecklistStatus,
+  "warning" | "info" | "success" | "destructive"
+> = {
+  EM_ANDAMENTO: "warning",
+  AGUARDANDO_APROVACAO: "info",
+  CONCLUIDO: "success",
+  REPROVADO: "destructive",
 };
 
 /** Rótulo do veículo: placa (+ modelo) do `vehicle`, com fallback no `vehicleId`. */
@@ -176,7 +187,7 @@ export default function ChecklistsHomePage() {
                         <p className="text-sm text-text-muted">{TIPO_LABEL[c.tipo]}</p>
                       </div>
                       <Badge
-                        variant={c.status === "CONCLUIDO" ? "success" : "warning"}
+                        variant={STATUS_VARIANT[c.status]}
                         className="shrink-0"
                       >
                         {STATUS_LABEL[c.status]}

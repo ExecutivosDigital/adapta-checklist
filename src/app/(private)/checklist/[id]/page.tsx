@@ -20,7 +20,18 @@ const TIPO_LABEL: Record<FleetChecklistTipo, string> = {
 };
 const STATUS_LABEL: Record<FleetChecklistStatus, string> = {
   EM_ANDAMENTO: "Em andamento",
+  AGUARDANDO_APROVACAO: "Aguardando aprovação",
   CONCLUIDO: "Concluído",
+  REPROVADO: "Reprovado",
+};
+const STATUS_VARIANT: Record<
+  FleetChecklistStatus,
+  "warning" | "info" | "success" | "destructive"
+> = {
+  EM_ANDAMENTO: "warning",
+  AGUARDANDO_APROVACAO: "info",
+  CONCLUIDO: "success",
+  REPROVADO: "destructive",
 };
 
 export default function ChecklistDetailPage({
@@ -39,7 +50,9 @@ export default function ChecklistDetailPage({
       .finally(() => setLoading(false));
   }, [id]);
 
-  const readOnly = checklist?.status === "CONCLUIDO";
+  // Editável apenas enquanto EM_ANDAMENTO. Concluído, aguardando aprovação ou
+  // reprovado abrem em modo leitura (a Frota confere os itens antes de decidir).
+  const readOnly = !!checklist && checklist.status !== "EM_ANDAMENTO";
 
   return (
     <div className="p-4">
@@ -48,7 +61,9 @@ export default function ChecklistDetailPage({
           <ArrowLeft className="h-5 w-5 text-text" />
         </button>
         <h1 className="text-xl font-bold text-text">
-          {readOnly ? "Checklist (concluído)" : "Continuar checklist"}
+          {checklist && readOnly
+            ? `Checklist (${STATUS_LABEL[checklist.status].toLowerCase()})`
+            : "Continuar checklist"}
         </h1>
       </header>
 
@@ -88,7 +103,7 @@ function ChecklistHeader({ checklist: c }: { checklist: FleetChecklist }) {
           <p className="text-sm text-text-muted">{TIPO_LABEL[c.tipo]}</p>
         </div>
         <Badge
-          variant={c.status === "CONCLUIDO" ? "success" : "warning"}
+          variant={STATUS_VARIANT[c.status]}
           className="shrink-0"
         >
           {STATUS_LABEL[c.status]}
