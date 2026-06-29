@@ -39,6 +39,7 @@ import type {
   FleetChecklist,
   FleetChecklistTemplate,
   FleetChecklistTipo,
+  FleetChecklistTipoCampo,
 } from "@/types/checklist.types";
 
 type Tab = "chegadas" | "afazer" | "dispon" | "gerenc" | "templates";
@@ -456,6 +457,16 @@ function RegistrarGerenciadora({
   );
 }
 
+/** Rascunho de item no editor — valorMeta como string até o submit. */
+interface TemplateItemDraft {
+  titulo: string;
+  bloqueante: boolean;
+  tipoCampo: FleetChecklistTipoCampo;
+  descricao: string;
+  unidade: string;
+  valorMeta: string;
+}
+
 function NovoTemplate({
   onClose,
   onSaved,
@@ -467,19 +478,44 @@ function NovoTemplate({
 }) {
   const [nome, setNome] = useState(editing?.nome ?? "");
   const [tipo, setTipo] = useState<FleetChecklistTipo>(editing?.tipo ?? "DIARIO");
-  const [itens, setItens] = useState<{ titulo: string; bloqueante: boolean }[]>(
-    editing?.itens.map((it) => ({ titulo: it.titulo, bloqueante: !!it.bloqueante })) ?? [],
+  const [itens, setItens] = useState<TemplateItemDraft[]>(
+    editing?.itens.map((it) => ({
+      titulo: it.titulo,
+      bloqueante: !!it.bloqueante,
+      tipoCampo: it.tipoCampo ?? "BOOLEAN",
+      descricao: it.descricao ?? "",
+      unidade: it.unidade ?? "",
+      valorMeta: it.valorMeta != null ? String(it.valorMeta) : "",
+    })) ?? [],
   );
   const [itemTitulo, setItemTitulo] = useState("");
   const [itemBloq, setItemBloq] = useState(false);
+  const [itemTipoCampo, setItemTipoCampo] = useState<FleetChecklistTipoCampo>("BOOLEAN");
+  const [itemDescricao, setItemDescricao] = useState("");
+  const [itemUnidade, setItemUnidade] = useState("");
+  const [itemValorMeta, setItemValorMeta] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
 
   function addItem() {
     if (!itemTitulo.trim()) return;
-    setItens((p) => [...p, { titulo: itemTitulo.trim(), bloqueante: itemBloq }]);
+    setItens((p) => [
+      ...p,
+      {
+        titulo: itemTitulo.trim(),
+        bloqueante: itemBloq,
+        tipoCampo: itemTipoCampo,
+        descricao: itemDescricao.trim(),
+        unidade: itemTipoCampo === "NUMERO" ? itemUnidade.trim() : "",
+        valorMeta: itemTipoCampo === "NUMERO" ? itemValorMeta.trim() : "",
+      },
+    ]);
     setItemTitulo("");
     setItemBloq(false);
+    setItemTipoCampo("BOOLEAN");
+    setItemDescricao("");
+    setItemUnidade("");
+    setItemValorMeta("");
   }
 
   async function salvar() {
@@ -490,11 +526,19 @@ function NovoTemplate({
         tipo,
         nome: nome.trim(),
         periodicidadeDias: tipo === "DIARIO" ? 1 : tipo === "CALIBRAGEM" ? 10 : undefined,
-        itens: itens.map((it, i) => ({
-          codigo: `IT${i + 1}`,
-          titulo: it.titulo,
-          bloqueante: it.bloqueante,
-        })),
+        itens: itens.map((it, i) => {
+          const numero = it.tipoCampo === "NUMERO";
+          const meta = numero && it.valorMeta.trim() ? Number(it.valorMeta) : undefined;
+          return {
+            codigo: `IT${i + 1}`,
+            titulo: it.titulo,
+            bloqueante: it.bloqueante,
+            tipoCampo: it.tipoCampo,
+            descricao: it.descricao.trim() || undefined,
+            unidade: numero && it.unidade.trim() ? it.unidade.trim() : undefined,
+            valorMeta: meta != null && !Number.isNaN(meta) ? meta : undefined,
+          };
+        }),
       };
       const saved = editing
         ? await updateTemplateAdmin(editing.id, payload)
@@ -537,30 +581,89 @@ function NovoTemplate({
       <label className="text-sm text-text-muted">Itens</label>
       <ul className="mb-2 mt-1 space-y-1">
         {itens.map((it, i) => (
-          <li key={i} className="flex items-center justify-between rounded-lg border border-border px-3 py-2 text-sm">
-            <span className="text-text">
-              {it.titulo}
-              {it.bloqueante && <span className="ml-2 text-xs text-red-600">bloqueante</span>}
-            </span>
+          <li key={i} className="flex items-start justify-between rounded-lg border border-border px-3 py-2 text-sm">
+            <div className="min-w-0">
+              <span className="text-text">
+                {it.titulo}
+                {it.bloqueante && <span className="ml-2 text-xs text-red-600">bloqueante</span>}
+                {it.tipoCampo === "NUMERO" && (
+                  <span className="ml-2 text-xs text-primary">
+                    valor{it.valorMeta ? ` · meta ${it.valorMeta}${it.unidade ? ` ${it.unidade}` : ""}` : ""}
+                  </span>
+                )}
+              </span>
+              {it.descricao && (
+                <p className="mt-0.5 truncate text-xs text-text-muted">{it.descricao}</p>
+              )}
+            </div>
             <button onClick={() => setItens((p) => p.filter((_, j) => j !== i))}>
               <Trash2 className="h-4 w-4 text-text-muted" />
             </button>
           </li>
         ))}
       </ul>
-      <div className="flex items-center gap-2">
-        <Input value={itemTitulo} onChange={(e) => setItemTitulo(e.target.value)} placeholder="Novo item" />
-        <button
-          onClick={() => setItemBloq((b) => !b)}
-          className={`rounded-lg border px-2 py-2 text-xs font-semibold ${
-            itemBloq ? "border-red-400 bg-red-50 text-red-700" : "border-border text-text-muted"
-          }`}
-          title="Item bloqueante"
-        >
-          bloq
-        </button>
-        <Button variant="outline" onClick={addItem}>
-          <Plus className="h-4 w-4" />
+
+      <div className="rounded-lg border border-border p-3">
+        <div className="flex items-center gap-2">
+          <Input value={itemTitulo} onChange={(e) => setItemTitulo(e.target.value)} placeholder="Novo item" />
+          <button
+            onClick={() => setItemBloq((b) => !b)}
+            className={`shrink-0 rounded-lg border px-2 py-2 text-xs font-semibold ${
+              itemBloq ? "border-red-400 bg-red-50 text-red-700" : "border-border text-text-muted"
+            }`}
+            title="Item bloqueante"
+          >
+            bloq
+          </button>
+        </div>
+
+        <div className="mt-2 flex gap-2">
+          {(
+            [
+              ["BOOLEAN", "Conforme/Não"],
+              ["NUMERO", "Valor numérico"],
+            ] as [FleetChecklistTipoCampo, string][]
+          ).map(([val, label]) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => setItemTipoCampo(val)}
+              className={`flex-1 rounded-lg border px-3 py-1.5 text-xs font-medium ${
+                itemTipoCampo === val
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border text-text-muted"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {itemTipoCampo === "NUMERO" && (
+          <div className="mt-2 flex gap-2">
+            <Input
+              value={itemUnidade}
+              onChange={(e) => setItemUnidade(e.target.value)}
+              placeholder="Unidade (ex.: psi)"
+            />
+            <Input
+              inputMode="numeric"
+              value={itemValorMeta}
+              onChange={(e) => setItemValorMeta(e.target.value.replace(/[^\d.,]/g, ""))}
+              placeholder="Valor meta"
+            />
+          </div>
+        )}
+
+        <Input
+          className="mt-2"
+          value={itemDescricao}
+          onChange={(e) => setItemDescricao(e.target.value)}
+          placeholder="Descrição (opcional)"
+        />
+
+        <Button variant="outline" className="mt-2 w-full" onClick={addItem} disabled={!itemTitulo.trim()}>
+          <Plus className="mr-1 h-4 w-4" /> Adicionar item
         </Button>
       </div>
 

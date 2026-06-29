@@ -5,6 +5,7 @@ import type {
   FleetChecklist,
   FleetChecklistTemplate,
   FleetChecklistTipo,
+  FleetChecklistTipoCampo,
 } from "@/types/checklist.types";
 
 /**
@@ -221,6 +222,10 @@ export interface CreateTemplateInput {
     titulo: string;
     bloqueante?: boolean;
     obrigatorio?: boolean;
+    tipoCampo?: FleetChecklistTipoCampo;
+    descricao?: string;
+    unidade?: string;
+    valorMeta?: number;
   }[];
 }
 

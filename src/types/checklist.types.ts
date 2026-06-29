@@ -15,12 +15,23 @@ export type FleetChecklistItemStatus =
 
 export type FleetChecklistStatus = "EM_ANDAMENTO" | "CONCLUIDO";
 
+/** Tipo do campo de resposta do item. Itens antigos (sem valor) = BOOLEAN. */
+export type FleetChecklistTipoCampo = "BOOLEAN" | "NUMERO" | "TEXTO";
+
 export interface FleetChecklistTemplateItem {
   codigo: string;
   titulo: string;
   /** Se reprovado (NAO_CONFORME) → veículo fica indisponível (MANUTENCAO). */
   bloqueante?: boolean;
   obrigatorio?: boolean;
+  /** Tipo do campo. Ausente/`BOOLEAN` = Conforme/Não (comportamento atual). */
+  tipoCampo?: FleetChecklistTipoCampo;
+  /** Descrição/instrução opcional exibida abaixo do título. */
+  descricao?: string | null;
+  /** Unidade do valor (ex.: "psi", "L", "mm") — só faz sentido para `NUMERO`. */
+  unidade?: string | null;
+  /** Valor meta/necessário — só faz sentido para `NUMERO`. */
+  valorMeta?: number | null;
 }
 
 export interface FleetChecklistTemplate {
@@ -39,6 +50,13 @@ export interface FleetChecklistItem {
   status: FleetChecklistItemStatus;
   observacoes: string | null;
   fotoUrl: string | null;
+  /** Tipo do campo. Ausente/`BOOLEAN` = Conforme/Não (comportamento atual). */
+  tipoCampo?: FleetChecklistTipoCampo;
+  descricao?: string | null;
+  unidade?: string | null;
+  valorMeta?: number | null;
+  /** Valor preenchido pelo motorista (só para `NUMERO`). */
+  valorAtual?: number | null;
 }
 
 export interface FleetChecklist {
@@ -67,6 +85,8 @@ export interface SaveChecklistItemInput {
   status: FleetChecklistItemStatus;
   observacoes?: string;
   fotoUrl?: string;
+  /** Valor numérico preenchido pelo motorista (item `NUMERO`). */
+  valorAtual?: number;
 }
 
 export interface SaveChecklistItemsInput {
