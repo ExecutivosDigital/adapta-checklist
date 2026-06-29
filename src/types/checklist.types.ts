@@ -13,7 +13,11 @@ export type FleetChecklistItemStatus =
   | "NAO_CONFORME"
   | "NAO_APLICAVEL";
 
-export type FleetChecklistStatus = "EM_ANDAMENTO" | "CONCLUIDO";
+export type FleetChecklistStatus =
+  | "EM_ANDAMENTO"
+  | "AGUARDANDO_APROVACAO"
+  | "CONCLUIDO"
+  | "REPROVADO";
 
 /** Tipo do campo de resposta do item. Itens antigos (sem valor) = BOOLEAN. */
 export type FleetChecklistTipoCampo = "BOOLEAN" | "NUMERO" | "TEXTO";

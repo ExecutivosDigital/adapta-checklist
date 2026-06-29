@@ -23,13 +23,32 @@ const TIPO_LABEL: Record<FleetChecklistTipo, string> = {
 const TIPOS: (FleetChecklistTipo | "all")[] = ["all", "DIARIO", "INSPECAO_TOTAL", "CALIBRAGEM"];
 const STATUS_LABEL: Record<FleetChecklistStatus, string> = {
   EM_ANDAMENTO: "Em andamento",
+  AGUARDANDO_APROVACAO: "Aguardando aprovação",
   CONCLUIDO: "Concluído",
+  REPROVADO: "Reprovado",
 };
-const STATUS_FILTERS: (FleetChecklistStatus | "all")[] = ["all", "CONCLUIDO", "EM_ANDAMENTO"];
+const STATUS_VARIANT: Record<
+  FleetChecklistStatus,
+  "warning" | "info" | "success" | "destructive"
+> = {
+  EM_ANDAMENTO: "warning",
+  AGUARDANDO_APROVACAO: "info",
+  CONCLUIDO: "success",
+  REPROVADO: "destructive",
+};
+const STATUS_FILTERS: (FleetChecklistStatus | "all")[] = [
+  "all",
+  "CONCLUIDO",
+  "AGUARDANDO_APROVACAO",
+  "EM_ANDAMENTO",
+  "REPROVADO",
+];
 const STATUS_FILTER_LABEL: Record<FleetChecklistStatus | "all", string> = {
   all: "Todos",
   CONCLUIDO: "Concluído",
+  AGUARDANDO_APROVACAO: "Aguardando aprovação",
   EM_ANDAMENTO: "Em andamento",
+  REPROVADO: "Reprovado",
 };
 
 /** Rótulo do veículo: placa (+ modelo) do `vehicle`, com fallback no `vehicleId`. */
@@ -40,11 +59,23 @@ function vehicleLabel(c: FleetChecklist): { plate: string; model: string | null 
   return { plate: c.vehicleId, model: null };
 }
 
+/** Data local (YYYY-MM-DD) de um ISO, no fuso do dispositivo — base do filtro por dia. */
+function localDay(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export default function HistoricoPage() {
   const router = useRouter();
   const [all, setAll] = useState<FleetChecklist[]>([]);
   const [tipo, setTipo] = useState<FleetChecklistTipo | "all">("all");
   const [status, setStatus] = useState<FleetChecklistStatus | "all">("all");
+  const [vehicle, setVehicle] = useState<string>("all");
+  const [motorista, setMotorista] = useState<string>("all");
+  const [day, setDay] = useState<string>("");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -54,6 +85,26 @@ export default function HistoricoPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  /** Veículos distintos presentes no histórico, ordenados por placa. */
+  const vehicleOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const c of all) {
+      map.set(c.vehicleId, c.vehicle?.plate ?? c.vehicleId);
+    }
+    return [...map.entries()]
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  }, [all]);
+
+  /** Motoristas distintos presentes no histórico, ordenados por nome. */
+  const motoristaOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const c of all) {
+      if (c.motoristaNome?.trim()) set.add(c.motoristaNome.trim());
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "pt-BR"));
+  }, [all]);
+
   const list = useMemo(() => {
     return [...all]
       .sort(
@@ -62,6 +113,9 @@ export default function HistoricoPage() {
       )
       .filter((c) => tipo === "all" || c.tipo === tipo)
       .filter((c) => status === "all" || c.status === status)
+      .filter((c) => vehicle === "all" || c.vehicleId === vehicle)
+      .filter((c) => motorista === "all" || c.motoristaNome === motorista)
+      .filter((c) => !day || localDay(c.createdAt) === day)
       .filter((c) => {
         if (!query.trim()) return true;
         const haystack = [
@@ -71,7 +125,7 @@ export default function HistoricoPage() {
         ].join(" ");
         return matchesSearch(haystack, query);
       });
-  }, [all, tipo, status, query]);
+  }, [all, tipo, status, vehicle, motorista, day, query]);
 
   return (
     <div className="p-4">
@@ -92,6 +146,52 @@ export default function HistoricoPage() {
           className="pl-9"
         />
       </div>
+
+      {/* Filtro por dia, veículo e motorista */}
+      <div className="mb-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <div>
+          <label className="mb-1 block text-xs font-medium text-text-muted">Dia</label>
+          <Input type="date" value={day} onChange={(e) => setDay(e.target.value)} />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-text-muted">Veículo</label>
+          <select
+            value={vehicle}
+            onChange={(e) => setVehicle(e.target.value)}
+            className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-text outline-none focus:border-primary"
+          >
+            <option value="all">Todos</option>
+            {vehicleOptions.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-text-muted">Motorista</label>
+          <select
+            value={motorista}
+            onChange={(e) => setMotorista(e.target.value)}
+            className="h-10 w-full rounded-lg border border-border bg-surface px-3 text-sm text-text outline-none focus:border-primary"
+          >
+            <option value="all">Todos</option>
+            {motoristaOptions.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+      {day && (
+        <button
+          onClick={() => setDay("")}
+          className="mb-3 text-xs font-medium text-primary hover:underline"
+        >
+          Limpar dia
+        </button>
+      )}
 
       {/* Filtro por tipo */}
       <div className="mb-2 flex flex-wrap gap-2">
@@ -148,7 +248,7 @@ export default function HistoricoPage() {
                       </p>
                     </div>
                     <Badge
-                      variant={c.status === "CONCLUIDO" ? "success" : "warning"}
+                      variant={STATUS_VARIANT[c.status]}
                       className="shrink-0"
                     >
                       {STATUS_LABEL[c.status]}

@@ -264,3 +264,41 @@ export async function listChecklistsEmAndamento(): Promise<FleetChecklist[]> {
   });
   return data;
 }
+
+// ───────────────────────── Aprovações ─────────────────────────
+
+/**
+ * Checklists concluídos pelo motorista aguardando a decisão da Frota
+ * (`GET /fleet-checklists?status=AGUARDANDO_APROVACAO`). O retorno traz
+ * `vehicle:{plate,brand,model}` e `motoristaNome` enriquecidos.
+ */
+export async function listChecklistsAguardandoAprovacao(): Promise<
+  FleetChecklist[]
+> {
+  if (MOCK) return [];
+  const { data } = await api.get<FleetChecklist[]>("/fleet-checklists", {
+    params: { status: "AGUARDANDO_APROVACAO" },
+  });
+  return data;
+}
+
+/** Aprova um checklist aguardando aprovação → CONCLUIDO. */
+export async function aprovarChecklist(id: string): Promise<FleetChecklist> {
+  const { data } = await api.patch<FleetChecklist>(
+    `/fleet-checklists/${id}/aprovar`,
+    {},
+  );
+  return data;
+}
+
+/** Reprova um checklist aguardando aprovação → REPROVADO. Nota opcional. */
+export async function reprovarChecklist(
+  id: string,
+  nota?: string,
+): Promise<FleetChecklist> {
+  const { data } = await api.patch<FleetChecklist>(
+    `/fleet-checklists/${id}/reprovar`,
+    nota?.trim() ? { nota: nota.trim() } : {},
+  );
+  return data;
+}
