@@ -38,7 +38,13 @@ export function ChecklistFill({ checklist, readOnly, onDone }: ChecklistFillProp
       Object.fromEntries(
         checklist.itens.map((i) => [
           i.id,
-          { id: i.id, status: i.status, observacoes: i.observacoes ?? undefined, fotoUrl: i.fotoUrl ?? undefined },
+          {
+            id: i.id,
+            status: i.status,
+            observacoes: i.observacoes ?? undefined,
+            fotoUrl: i.fotoUrl ?? undefined,
+            valorAtual: i.valorAtual ?? undefined,
+          },
         ]),
       ),
   );
@@ -113,7 +119,7 @@ export function ChecklistFill({ checklist, readOnly, onDone }: ChecklistFillProp
           const a = answers[item.id];
           return (
             <li key={item.id} className="rounded-xl border border-border bg-surface p-3">
-              <div className="mb-2 flex items-center justify-between">
+              <div className="mb-1 flex items-center justify-between">
                 <span className="font-medium text-text">{item.titulo}</span>
                 {item.bloqueante && (
                   <span className="rounded bg-red-100 px-2 py-0.5 text-xs font-semibold text-red-700">
@@ -121,6 +127,41 @@ export function ChecklistFill({ checklist, readOnly, onDone }: ChecklistFillProp
                   </span>
                 )}
               </div>
+
+              {item.descricao && (
+                <p className="mb-2 text-sm text-text-muted">{item.descricao}</p>
+              )}
+
+              {item.tipoCampo === "NUMERO" && (
+                <div className="mb-2">
+                  {item.valorMeta != null && (
+                    <p className="mb-1 text-xs font-medium text-primary">
+                      Necessário: {item.valorMeta}
+                      {item.unidade ? ` ${item.unidade}` : ""}
+                    </p>
+                  )}
+                  {!readOnly ? (
+                    <Input
+                      inputMode="decimal"
+                      value={a?.valorAtual != null ? String(a.valorAtual) : ""}
+                      onChange={(e) => {
+                        const raw = e.target.value.replace(/[^\d.,]/g, "").replace(",", ".");
+                        const num = raw === "" ? undefined : Number(raw);
+                        setItem(item.id, {
+                          valorAtual: num != null && !Number.isNaN(num) ? num : undefined,
+                        });
+                      }}
+                      placeholder={`Valor atual${item.unidade ? ` (${item.unidade})` : ""}`}
+                    />
+                  ) : (
+                    <p className="text-sm text-text">
+                      Valor: {a?.valorAtual != null ? a.valorAtual : "—"}
+                      {item.unidade && a?.valorAtual != null ? ` ${item.unidade}` : ""}
+                    </p>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-3 gap-2">
                 {STATUS_BTN.map((b) => {
                   const Icon = b.icon;
