@@ -182,7 +182,7 @@ export function ChecklistFill({ checklist, readOnly, onDone }: ChecklistFillProp
                 })}
               </div>
 
-              {!readOnly && a?.status === "NAO_CONFORME" && (
+              {!readOnly && !!a?.status && a.status !== "PENDENTE" && (
                 <Input
                   className="mt-2"
                   value={a.observacoes ?? ""}
