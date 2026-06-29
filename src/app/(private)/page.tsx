@@ -18,6 +18,7 @@ import {
   Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
 import { listChecklists } from "@/services/checklistService";
 import { MOCK_CALIBRAGEM } from "@/services/checklistMock";
@@ -37,6 +38,14 @@ const STATUS_LABEL: Record<FleetChecklistStatus, string> = {
   EM_ANDAMENTO: "Em andamento",
   CONCLUIDO: "Concluído",
 };
+
+/** Rótulo do veículo: placa (+ modelo) do `vehicle`, com fallback no `vehicleId`. */
+function vehicleLabel(c: FleetChecklist): { plate: string; model: string | null } {
+  if (c.vehicle?.plate) {
+    return { plate: c.vehicle.plate, model: c.vehicle.model ?? null };
+  }
+  return { plate: c.vehicleId, model: null };
+}
 
 export default function ChecklistsHomePage() {
   const { user } = useAuth();
@@ -139,33 +148,53 @@ export default function ChecklistsHomePage() {
         </div>
       ) : (
         <ul className="space-y-2">
-          {checklists.map((c) => (
-            <li key={c.id}>
-              <Link
-                href={`/checklist/${c.id}`}
-                className="block rounded-xl border border-border bg-surface p-4 transition hover:border-primary/40"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-text">{TIPO_LABEL[c.tipo]}</span>
-                  <span
-                    className={`text-xs font-semibold ${
-                      c.status === "CONCLUIDO" ? "text-green-600" : "text-amber-600"
-                    }`}
+          {[...checklists]
+            .sort(
+              (a, b) =>
+                new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+            )
+            .slice(0, 5)
+            .map((c) => {
+              const veh = vehicleLabel(c);
+              return (
+                <li key={c.id}>
+                  <Link
+                    href={`/checklist/${c.id}`}
+                    className="block rounded-xl border border-border bg-surface p-4 transition hover:border-primary/40"
                   >
-                    {STATUS_LABEL[c.status]}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-sm text-text-muted">
-                  <span>{new Date(c.createdAt).toLocaleString("pt-BR")}</span>
-                  {c.odometer != null && (
-                    <span className="flex items-center gap-1">
-                      <Gauge className="h-3.5 w-3.5" /> {c.odometer.toLocaleString("pt-BR")} km
-                    </span>
-                  )}
-                </div>
-              </Link>
-            </li>
-          ))}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="truncate font-semibold text-text">
+                          {veh.plate}
+                          {veh.model ? (
+                            <span className="font-normal text-text-muted">
+                              {" "}
+                              · {veh.model}
+                            </span>
+                          ) : null}
+                        </p>
+                        <p className="text-sm text-text-muted">{TIPO_LABEL[c.tipo]}</p>
+                      </div>
+                      <Badge
+                        variant={c.status === "CONCLUIDO" ? "success" : "warning"}
+                        className="shrink-0"
+                      >
+                        {STATUS_LABEL[c.status]}
+                      </Badge>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between text-sm text-text-muted">
+                      <span>{new Date(c.createdAt).toLocaleString("pt-BR")}</span>
+                      {c.odometer != null && (
+                        <span className="flex items-center gap-1">
+                          <Gauge className="h-3.5 w-3.5" />{" "}
+                          {c.odometer.toLocaleString("pt-BR")} km
+                        </span>
+                      )}
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
         </ul>
       )}
     </div>

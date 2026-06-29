@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Search } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
 import { listChecklists } from "@/services/checklistService";
+import { matchesSearch } from "@/utils/normalizeSearch";
 import type {
   FleetChecklist,
   FleetChecklistStatus,
@@ -22,11 +25,27 @@ const STATUS_LABEL: Record<FleetChecklistStatus, string> = {
   EM_ANDAMENTO: "Em andamento",
   CONCLUIDO: "Concluído",
 };
+const STATUS_FILTERS: (FleetChecklistStatus | "all")[] = ["all", "CONCLUIDO", "EM_ANDAMENTO"];
+const STATUS_FILTER_LABEL: Record<FleetChecklistStatus | "all", string> = {
+  all: "Todos",
+  CONCLUIDO: "Concluído",
+  EM_ANDAMENTO: "Em andamento",
+};
+
+/** Rótulo do veículo: placa (+ modelo) do `vehicle`, com fallback no `vehicleId`. */
+function vehicleLabel(c: FleetChecklist): { plate: string; model: string | null } {
+  if (c.vehicle?.plate) {
+    return { plate: c.vehicle.plate, model: c.vehicle.model ?? null };
+  }
+  return { plate: c.vehicleId, model: null };
+}
 
 export default function HistoricoPage() {
   const router = useRouter();
   const [all, setAll] = useState<FleetChecklist[]>([]);
   const [tipo, setTipo] = useState<FleetChecklistTipo | "all">("all");
+  const [status, setStatus] = useState<FleetChecklistStatus | "all">("all");
+  const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -35,10 +54,24 @@ export default function HistoricoPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  const list = useMemo(
-    () => (tipo === "all" ? all : all.filter((c) => c.tipo === tipo)),
-    [all, tipo],
-  );
+  const list = useMemo(() => {
+    return [...all]
+      .sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      )
+      .filter((c) => tipo === "all" || c.tipo === tipo)
+      .filter((c) => status === "all" || c.status === status)
+      .filter((c) => {
+        if (!query.trim()) return true;
+        const haystack = [
+          c.vehicle?.plate ?? c.vehicleId,
+          c.vehicle?.model ?? "",
+          c.motoristaNome ?? "",
+        ].join(" ");
+        return matchesSearch(haystack, query);
+      });
+  }, [all, tipo, status, query]);
 
   return (
     <div className="p-4">
@@ -49,7 +82,19 @@ export default function HistoricoPage() {
         <h1 className="text-xl font-bold text-text">Histórico</h1>
       </header>
 
-      <div className="mb-4 flex flex-wrap gap-2">
+      {/* Busca por placa / motorista */}
+      <div className="relative mb-3">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
+        <Input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Buscar por placa ou motorista"
+          className="pl-9"
+        />
+      </div>
+
+      {/* Filtro por tipo */}
+      <div className="mb-2 flex flex-wrap gap-2">
         {TIPOS.map((t) => (
           <button
             key={t}
@@ -63,34 +108,59 @@ export default function HistoricoPage() {
         ))}
       </div>
 
+      {/* Filtro por status */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        {STATUS_FILTERS.map((s) => (
+          <button
+            key={s}
+            onClick={() => setStatus(s)}
+            className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
+              status === s ? "border-primary bg-primary/10 text-primary" : "border-border text-text-muted"
+            }`}
+          >
+            {STATUS_FILTER_LABEL[s]}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <p className="text-text-muted">Carregando…</p>
       ) : list.length === 0 ? (
         <p className="text-text-muted">Nada por aqui.</p>
       ) : (
         <ul className="space-y-2">
-          {list.map((c) => (
-            <li key={c.id}>
-              <Link
-                href={`/checklist/${c.id}`}
-                className="block rounded-xl border border-border bg-surface p-4 transition hover:border-primary/40"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-text">{TIPO_LABEL[c.tipo]}</span>
-                  <span
-                    className={`text-xs font-semibold ${
-                      c.status === "CONCLUIDO" ? "text-green-600" : "text-amber-600"
-                    }`}
-                  >
-                    {STATUS_LABEL[c.status]}
-                  </span>
-                </div>
-                <p className="text-sm text-text-muted">
-                  {new Date(c.createdAt).toLocaleString("pt-BR")}
-                </p>
-              </Link>
-            </li>
-          ))}
+          {list.map((c) => {
+            const veh = vehicleLabel(c);
+            return (
+              <li key={c.id}>
+                <Link
+                  href={`/checklist/${c.id}`}
+                  className="block rounded-xl border border-border bg-surface p-4 transition hover:border-primary/40"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-text">
+                        {c.motoristaNome ?? "—"}
+                      </p>
+                      <p className="text-sm text-text-muted">
+                        {veh.plate}
+                        {veh.model ? ` · ${veh.model}` : ""} · {TIPO_LABEL[c.tipo]}
+                      </p>
+                    </div>
+                    <Badge
+                      variant={c.status === "CONCLUIDO" ? "success" : "warning"}
+                      className="shrink-0"
+                    >
+                      {STATUS_LABEL[c.status]}
+                    </Badge>
+                  </div>
+                  <p className="mt-2 text-sm text-text-muted">
+                    {new Date(c.createdAt).toLocaleString("pt-BR")}
+                  </p>
+                </Link>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

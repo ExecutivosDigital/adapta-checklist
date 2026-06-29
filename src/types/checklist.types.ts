@@ -68,6 +68,18 @@ export interface FleetChecklist {
   concluidoEm: string | null;
   createdAt: string;
   itens: FleetChecklistItem[];
+  /**
+   * Dados do veículo enriquecidos pelo backend (list/get). Opcional —
+   * o backend pode ainda não enviar; nesse caso usa-se `vehicleId` como fallback.
+   */
+  vehicle?: {
+    id: string;
+    plate: string;
+    brand: string | null;
+    model: string | null;
+  } | null;
+  /** Nome do motorista enriquecido pelo backend (list/get). Opcional. */
+  motoristaNome?: string | null;
 }
 
 // ── Inputs ──
