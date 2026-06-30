@@ -59,6 +59,25 @@ function vehicleLabel(c: FleetChecklist): { plate: string; model: string | null 
   return { plate: c.vehicleId, model: null };
 }
 
+/** Vigência do checklist: badge "Vencido" ou texto "Válido até {data}". */
+function VigenciaBadge({ c }: { c: FleetChecklist }) {
+  if (c.vencido) {
+    return (
+      <Badge variant="destructive" className="shrink-0">
+        Vencido
+      </Badge>
+    );
+  }
+  if (c.validoAte) {
+    return (
+      <span className="shrink-0 text-xs text-text-muted">
+        Válido até {new Date(c.validoAte).toLocaleDateString("pt-BR")}
+      </span>
+    );
+  }
+  return null;
+}
+
 /** Data local (YYYY-MM-DD) de um ISO, no fuso do dispositivo — base do filtro por dia. */
 function localDay(iso: string): string {
   const d = new Date(iso);
@@ -254,9 +273,10 @@ export default function HistoricoPage() {
                       {STATUS_LABEL[c.status]}
                     </Badge>
                   </div>
-                  <p className="mt-2 text-sm text-text-muted">
-                    {new Date(c.createdAt).toLocaleString("pt-BR")}
-                  </p>
+                  <div className="mt-2 flex items-center justify-between gap-2 text-sm text-text-muted">
+                    <span>{new Date(c.createdAt).toLocaleString("pt-BR")}</span>
+                    <VigenciaBadge c={c} />
+                  </div>
                 </Link>
               </li>
             );

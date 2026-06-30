@@ -9,7 +9,6 @@ import {
   ClipboardList,
   Gauge,
   History,
-  Link2,
   Mic,
   Plus,
   Radio,
@@ -56,6 +55,25 @@ function vehicleLabel(c: FleetChecklist): { plate: string; model: string | null 
     return { plate: c.vehicle.plate, model: c.vehicle.model ?? null };
   }
   return { plate: c.vehicleId, model: null };
+}
+
+/** Vigência do checklist: badge "Vencido" ou linha "Válido até {data}". */
+function VigenciaBadge({ c }: { c: FleetChecklist }) {
+  if (c.vencido) {
+    return (
+      <Badge variant="destructive" className="shrink-0">
+        Vencido
+      </Badge>
+    );
+  }
+  if (c.validoAte) {
+    return (
+      <span className="shrink-0 text-xs text-text-muted">
+        Válido até {new Date(c.validoAte).toLocaleDateString("pt-BR")}
+      </span>
+    );
+  }
+  return null;
 }
 
 export default function ChecklistsHomePage() {
@@ -136,8 +154,6 @@ export default function ChecklistsHomePage() {
         <Shortcut href="/calendario" icon={CalendarDays} label="Calendário" />
         <Shortcut href="/historico" icon={History} label="Histórico" />
         <Shortcut href="/gr" icon={ShieldCheck} label="Liberação" />
-        {/* T8.2 — Vistoria do conjunto (cavalo + carreta) */}
-        <Shortcut href="/conjunto" icon={Link2} label="Conjunto" />
         {/* T3.2 — Aderência + Calibragem (ADM) */}
         <Shortcut href="/aderencia" icon={CalendarCheck} label="Aderência" />
         <Shortcut href="/calibragem" icon={Gauge} label="Calibragem" />
@@ -202,6 +218,11 @@ export default function ChecklistsHomePage() {
                         </span>
                       )}
                     </div>
+                    {(c.vencido || c.validoAte) && (
+                      <div className="mt-2 flex justify-end">
+                        <VigenciaBadge c={c} />
+                      </div>
+                    )}
                   </Link>
                 </li>
               );

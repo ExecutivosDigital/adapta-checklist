@@ -5,11 +5,14 @@ import { useRouter } from "next/navigation";
 import {
   Check,
   ClipboardList,
+  Gauge,
   LogOut,
   Plus,
   Trash2,
   Truck,
   TruckIcon,
+  User,
+  Wallet,
   Wrench,
   X,
 } from "lucide-react";
@@ -17,10 +20,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/hooks/useAuth";
 import { extractApiError } from "@/lib/api";
-import {
-  MOCK_GERENCIADORA,
-  type GerenciadoraPendente,
-} from "@/services/frotaGrMock";
 import {
   approveMaintenanceRequest,
   aprovarChecklist,
@@ -50,7 +49,6 @@ type Tab =
   | "aprovacoes"
   | "afazer"
   | "dispon"
-  | "gerenc"
   | "templates";
 
 const TABS: { id: Tab; label: string }[] = [
@@ -58,7 +56,6 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "aprovacoes", label: "Aprovações" },
   { id: "afazer", label: "A fazer" },
   { id: "dispon", label: "Disponibilidade" },
-  { id: "gerenc", label: "Gerenciadora" },
   { id: "templates", label: "Templates" },
 ];
 
@@ -87,6 +84,23 @@ const TIPO_LABEL: Record<FleetChecklistTipo, string> = {
   OUTRO: "Outro",
 };
 
+/** Tipo da manutenção (enum `MaintenanceType` do back). */
+const MAINT_TYPE_LABEL: Record<string, string> = {
+  PREVENTIVA: "Preventiva",
+  CORRETIVA: "Corretiva",
+  PREDITIVA: "Preditiva",
+};
+const MAINT_TYPE_BADGE: Record<string, string> = {
+  PREVENTIVA: "bg-blue-100 text-blue-700",
+  CORRETIVA: "bg-amber-100 text-amber-700",
+  PREDITIVA: "bg-violet-100 text-violet-700",
+};
+
+/** Formata um valor em Reais (BRL). */
+function formatBRL(v: number): string {
+  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+
 /** Data local (YYYY-MM-DD) de um ISO, no fuso do dispositivo — base do filtro por dia. */
 function localDay(iso: string): string {
   const d = new Date(iso);
@@ -111,9 +125,6 @@ export default function FrotaPage() {
   const [dispon, setDispon] = useState<VehicleAvailability[]>([]);
   const [templates, setTemplates] = useState<FleetChecklistTemplate[]>([]);
 
-  // Gerenciadora: ainda mock (depende da feature de conjunto/GR — Etapa 8).
-  const [gerenc] = useState<GerenciadoraPendente[]>(MOCK_GERENCIADORA);
-
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [acaoId, setAcaoId] = useState<string | null>(null);
@@ -124,8 +135,9 @@ export default function FrotaPage() {
   const [chMotorista, setChMotorista] = useState("all");
 
   // Modais
-  const [regAlvo, setRegAlvo] = useState<GerenciadoraPendente | null>(null);
   const [reprovarAlvo, setReprovarAlvo] = useState<FleetChecklist | null>(null);
+  const [osAlvo, setOsAlvo] = useState<MaintenanceRequest | null>(null);
+  const [rejeitarReqAlvo, setRejeitarReqAlvo] = useState<MaintenanceRequest | null>(null);
   const [novoTpl, setNovoTpl] = useState(false);
   const [verTpl, setVerTpl] = useState<FleetChecklistTemplate | null>(null);
   const [editTpl, setEditTpl] = useState<FleetChecklistTemplate | null>(null);
@@ -164,15 +176,31 @@ export default function FrotaPage() {
     void carregar(tab);
   }, [tab, carregar]);
 
-  async function decide(id: string, aprovar: boolean) {
+  /** Aprova a requisição → abre a ordem de manutenção (OS) no quadro. */
+  async function abrirOrdemManutencao(id: string, reviewNotes?: string) {
+    setErro(null);
     setAcaoId(id);
     try {
-      const updated = aprovar
-        ? await approveMaintenanceRequest(id)
-        : await rejectMaintenanceRequest(id);
+      const updated = await approveMaintenanceRequest(id, reviewNotes);
       setAfazer((p) => p.map((a) => (a.id === id ? { ...a, ...updated } : a)));
+      setOsAlvo(null);
     } catch (e) {
-      setErro(extractApiError(e, "Não foi possível registrar a decisão."));
+      setErro(extractApiError(e, "Não foi possível abrir a ordem de manutenção."));
+    } finally {
+      setAcaoId(null);
+    }
+  }
+
+  /** Rejeita a requisição (motivo opcional) — não vira OS. */
+  async function rejeitarRequisicao(id: string, reviewNotes?: string) {
+    setErro(null);
+    setAcaoId(id);
+    try {
+      const updated = await rejectMaintenanceRequest(id, reviewNotes);
+      setAfazer((p) => p.map((a) => (a.id === id ? { ...a, ...updated } : a)));
+      setRejeitarReqAlvo(null);
+    } catch (e) {
+      setErro(extractApiError(e, "Não foi possível rejeitar a requisição."));
     } finally {
       setAcaoId(null);
     }
@@ -261,10 +289,10 @@ export default function FrotaPage() {
       </div>
 
       <div className="p-4">
-        {erro && tab !== "gerenc" && (
+        {erro && (
           <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{erro}</p>
         )}
-        {loading && tab !== "gerenc" && (
+        {loading && (
           <p className="mb-3 text-sm text-text-muted">Carregando…</p>
         )}
 
@@ -409,46 +437,115 @@ export default function FrotaPage() {
         )}
 
         {tab === "afazer" && !loading && (
-          <ul className="space-y-2">
-            {afazer.map((a) => (
-              <li key={a.id} className="rounded-xl border border-border bg-surface p-4">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-text">
-                    {a.vehicle?.plate ?? "Veículo"}
-                  </span>
-                  <span className="text-xs text-text-muted">
-                    {new Date(a.createdAt).toLocaleString("pt-BR")}
-                  </span>
-                </div>
-                <p className="text-sm text-text">{a.description ?? a.title}</p>
-                {a.status === "PENDING" ? (
-                  <div className="mt-2 grid grid-cols-2 gap-2">
-                    <Button disabled={acaoId === a.id} onClick={() => decide(a.id, true)}>
-                      <Check className="mr-1 h-4 w-4" /> Aprovar
-                    </Button>
-                    <Button
-                      variant="danger"
-                      disabled={acaoId === a.id}
-                      onClick={() => decide(a.id, false)}
-                    >
-                      <X className="mr-1 h-4 w-4" /> Rejeitar
-                    </Button>
-                  </div>
-                ) : (
-                  <p
-                    className={`mt-2 text-sm font-semibold ${
-                      a.status === "APPROVED" ? "text-green-600" : "text-red-600"
-                    }`}
+          <>
+            <p className="mb-3 text-xs text-text-muted">
+              Requisições enviadas pelos motoristas. Ao aprovar, abre-se uma{" "}
+              <b>ordem de manutenção (OS)</b> no quadro da oficina.
+            </p>
+            <ul className="space-y-2">
+              {afazer.map((a) => {
+                const plate = a.vehicle?.plate ?? "Veículo";
+                const model = a.vehicle?.model ?? null;
+                const pendente = a.status === "PENDING";
+                return (
+                  <li
+                    key={a.id}
+                    className="rounded-xl border border-border bg-surface p-4"
                   >
-                    {a.status === "APPROVED" ? "Aprovado → vira OS" : "Rejeitado"}
-                  </p>
-                )}
-              </li>
-            ))}
-            {afazer.length === 0 && (
-              <p className="text-text-muted">Sem requisições pendentes. ✅</p>
-            )}
-          </ul>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-text">
+                            {plate}
+                            {model ? (
+                              <span className="font-normal text-text-muted"> · {model}</span>
+                            ) : null}
+                          </span>
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                              MAINT_TYPE_BADGE[a.type] ?? "bg-gray-100 text-gray-600"
+                            }`}
+                          >
+                            {MAINT_TYPE_LABEL[a.type] ?? a.type}
+                          </span>
+                        </div>
+                        {a.title && (
+                          <p className="mt-0.5 text-sm font-medium text-text">{a.title}</p>
+                        )}
+                      </div>
+                      <span className="shrink-0 text-xs text-text-muted">
+                        {new Date(a.createdAt).toLocaleString("pt-BR")}
+                      </span>
+                    </div>
+
+                    {a.description && (
+                      <p className="mt-1 text-sm text-text-muted">{a.description}</p>
+                    )}
+
+                    {(a.requesterName || a.odometer != null || a.estimatedCost != null) && (
+                      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-text-muted">
+                        {a.requesterName && (
+                          <span className="flex items-center gap-1">
+                            <User className="h-3.5 w-3.5" /> {a.requesterName}
+                          </span>
+                        )}
+                        {a.odometer != null && (
+                          <span className="flex items-center gap-1">
+                            <Gauge className="h-3.5 w-3.5" />{" "}
+                            {a.odometer.toLocaleString("pt-BR")} km
+                          </span>
+                        )}
+                        {a.estimatedCost != null && (
+                          <span className="flex items-center gap-1">
+                            <Wallet className="h-3.5 w-3.5" /> {formatBRL(a.estimatedCost)}{" "}
+                            <span className="text-text-muted/70">(estim.)</span>
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {pendente ? (
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <Button
+                          disabled={acaoId === a.id}
+                          onClick={() => setOsAlvo(a)}
+                        >
+                          <Wrench className="mr-1 h-4 w-4" /> Aprovar e abrir OS
+                        </Button>
+                        <Button
+                          variant="danger"
+                          disabled={acaoId === a.id}
+                          onClick={() => setRejeitarReqAlvo(a)}
+                        >
+                          <X className="mr-1 h-4 w-4" /> Rejeitar
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="mt-3">
+                        {a.status === "APPROVED" ? (
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-green-50 px-2.5 py-1 text-sm font-semibold text-green-700">
+                            <Wrench className="h-4 w-4" /> OS aberta no quadro
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-lg bg-red-50 px-2.5 py-1 text-sm font-semibold text-red-600">
+                            <X className="h-4 w-4" /> Rejeitada
+                          </span>
+                        )}
+                        {a.reviewNotes && (
+                          <p className="mt-1 text-xs text-text-muted">
+                            Nota: {a.reviewNotes}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+              {afazer.length === 0 && (
+                <p className="text-text-muted">Sem requisições pendentes. ✅</p>
+              )}
+            </ul>
+          </>
         )}
 
         {tab === "dispon" && !loading && (
@@ -478,30 +575,6 @@ export default function FrotaPage() {
           </ul>
         )}
 
-        {tab === "gerenc" && (
-          <>
-            {/* TODO(Etapa 8): ligar no backend quando a feature de conjunto/GR
-                (vistoria cavalo+carreta + import do laudo da gerenciadora)
-                existir. Hoje é mock — não há endpoint real. */}
-            <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">
-              Em breve — integração da gerenciadora chega na Etapa 8 (conjunto/GR).
-              Os dados abaixo são de demonstração.
-            </div>
-            <ul className="space-y-2">
-              {gerenc.map((g) => (
-                <li key={`${g.cavalo}-${g.carreta}`} className="rounded-xl border border-border bg-surface p-4">
-                  <p className="font-semibold text-text">{g.cavalo} + {g.carreta}</p>
-                  <p className="text-sm text-text-muted">Gerenciadora: {g.gerenciadora}</p>
-                  <Button variant="outline" className="mt-2 w-full" onClick={() => setRegAlvo(g)}>
-                    <Wrench className="mr-1 h-4 w-4" /> Registrar checklist (import)
-                  </Button>
-                </li>
-              ))}
-              {gerenc.length === 0 && <p className="text-text-muted">Sem pendências. ✅</p>}
-            </ul>
-          </>
-        )}
-
         {tab === "templates" && !loading && (
           <>
             <ul className="space-y-2">
@@ -518,6 +591,10 @@ export default function FrotaPage() {
                         <p className="text-xs text-text-muted">
                           {t.itens.length} itens
                           {t.periodicidadeDias ? ` · a cada ${t.periodicidadeDias}d` : ""}
+                          {t.recorrente && t.validadeDias != null
+                            ? ` · vale ${t.validadeDias}d`
+                            : ""}
+                          {t.exigirAntesViagem ? " · antes de viagem" : ""}
                         </p>
                       </div>
                     </div>
@@ -546,12 +623,23 @@ export default function FrotaPage() {
         />
       )}
 
-      {/* Modal: registrar checklist da gerenciadora (mock — Etapa 8) */}
-      {regAlvo && (
-        <RegistrarGerenciadora
-          alvo={regAlvo}
-          onClose={() => setRegAlvo(null)}
-          onConfirm={() => setRegAlvo(null)}
+      {/* Modal: aprovar requisição → abrir ordem de manutenção (OS) */}
+      {osAlvo && (
+        <AbrirOrdemManutencao
+          alvo={osAlvo}
+          saving={acaoId === osAlvo.id}
+          onClose={() => setOsAlvo(null)}
+          onConfirm={(nota) => abrirOrdemManutencao(osAlvo.id, nota)}
+        />
+      )}
+
+      {/* Modal: rejeitar requisição (motivo opcional) */}
+      {rejeitarReqAlvo && (
+        <RejeitarRequisicao
+          alvo={rejeitarReqAlvo}
+          saving={acaoId === rejeitarReqAlvo.id}
+          onClose={() => setRejeitarReqAlvo(null)}
+          onConfirm={(nota) => rejeitarRequisicao(rejeitarReqAlvo.id, nota)}
         />
       )}
 
@@ -559,6 +647,23 @@ export default function FrotaPage() {
       {verTpl && (
         <Modal title={verTpl.nome} onClose={() => setVerTpl(null)}>
           <p className="mb-3 text-sm text-text-muted">{TIPO_LABEL[verTpl.tipo]}</p>
+          {(verTpl.recorrente || verTpl.exigirAntesViagem) && (
+            <div className="mb-3 flex flex-wrap gap-2">
+              {verTpl.recorrente && (
+                <span className="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-semibold text-primary">
+                  Recorrente
+                  {verTpl.validadeDias != null
+                    ? ` · vale ${verTpl.validadeDias} ${verTpl.validadeDias === 1 ? "dia" : "dias"}`
+                    : ""}
+                </span>
+              )}
+              {verTpl.exigirAntesViagem && (
+                <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-700">
+                  Refazer antes de viagem
+                </span>
+              )}
+            </div>
+          )}
           <ul className="space-y-1">
             {verTpl.itens.map((it) => (
               <li key={it.codigo} className="flex items-center justify-between text-sm">
@@ -631,33 +736,6 @@ function Modal({
   );
 }
 
-function RegistrarGerenciadora({
-  alvo,
-  onClose,
-  onConfirm,
-}: {
-  alvo: GerenciadoraPendente;
-  onClose: () => void;
-  onConfirm: () => void;
-}) {
-  const [validade, setValidade] = useState("");
-  const [protocolo, setProtocolo] = useState("");
-  return (
-    <Modal title="Checklist da gerenciadora" onClose={onClose}>
-      <p className="mb-3 text-sm text-text-muted">
-        {alvo.cavalo} + {alvo.carreta} · {alvo.gerenciadora}
-      </p>
-      <label className="text-sm text-text-muted">Protocolo / laudo</label>
-      <Input className="mb-3 mt-1" value={protocolo} onChange={(e) => setProtocolo(e.target.value)} placeholder="Nº do protocolo" />
-      <label className="text-sm text-text-muted">Validade</label>
-      <Input className="mb-4 mt-1" type="date" value={validade} onChange={(e) => setValidade(e.target.value)} />
-      <Button className="w-full" disabled={!protocolo || !validade} onClick={onConfirm}>
-        Registrar
-      </Button>
-    </Modal>
-  );
-}
-
 function ReprovarChecklist({
   alvo,
   saving,
@@ -696,6 +774,108 @@ function ReprovarChecklist({
   );
 }
 
+/** Resumo do veículo + tipo da requisição, reusado nos modais de manutenção. */
+function ReqResumo({ alvo }: { alvo: MaintenanceRequest }) {
+  const plate = alvo.vehicle?.plate ?? "Veículo";
+  const model = alvo.vehicle?.model ?? null;
+  return (
+    <div className="mb-3 rounded-lg border border-border bg-surface-muted/40 p-3">
+      <p className="font-semibold text-text">
+        {plate}
+        {model ? <span className="font-normal text-text-muted"> · {model}</span> : null}
+        <span className="ml-2 text-xs font-medium text-text-muted">
+          {MAINT_TYPE_LABEL[alvo.type] ?? alvo.type}
+        </span>
+      </p>
+      {alvo.title && <p className="mt-0.5 text-sm text-text">{alvo.title}</p>}
+      {alvo.description && (
+        <p className="mt-0.5 text-sm text-text-muted">{alvo.description}</p>
+      )}
+      {alvo.estimatedCost != null && (
+        <p className="mt-1 text-xs text-text-muted">
+          Custo estimado: {formatBRL(alvo.estimatedCost)}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Aprova a requisição abrindo a OS no quadro da oficina (nota opcional). */
+function AbrirOrdemManutencao({
+  alvo,
+  saving,
+  onClose,
+  onConfirm,
+}: {
+  alvo: MaintenanceRequest;
+  saving: boolean;
+  onClose: () => void;
+  onConfirm: (nota?: string) => void;
+}) {
+  const [nota, setNota] = useState("");
+  return (
+    <Modal title="Abrir ordem de manutenção" onClose={onClose}>
+      <ReqResumo alvo={alvo} />
+      <p className="mb-3 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-800">
+        Ao confirmar, a requisição é <b>aprovada</b> e entra como uma OS na coluna
+        <b> A fazer</b> do quadro da oficina.
+      </p>
+      <label className="text-sm text-text-muted">Observação para a oficina (opcional)</label>
+      <textarea
+        value={nota}
+        onChange={(e) => setNota(e.target.value)}
+        rows={3}
+        placeholder="Ex.: priorizar, usar peça da prateleira X…"
+        className="mb-4 mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none focus:border-primary"
+      />
+      <Button
+        className="w-full"
+        disabled={saving}
+        onClick={() => onConfirm(nota.trim() || undefined)}
+      >
+        <Wrench className="mr-1 h-4 w-4" />
+        {saving ? "Abrindo OS…" : "Aprovar e abrir OS"}
+      </Button>
+    </Modal>
+  );
+}
+
+/** Rejeita a requisição com motivo opcional — não vira OS. */
+function RejeitarRequisicao({
+  alvo,
+  saving,
+  onClose,
+  onConfirm,
+}: {
+  alvo: MaintenanceRequest;
+  saving: boolean;
+  onClose: () => void;
+  onConfirm: (nota?: string) => void;
+}) {
+  const [nota, setNota] = useState("");
+  return (
+    <Modal title="Rejeitar requisição" onClose={onClose}>
+      <ReqResumo alvo={alvo} />
+      <label className="text-sm text-text-muted">Motivo (opcional)</label>
+      <textarea
+        value={nota}
+        onChange={(e) => setNota(e.target.value)}
+        rows={3}
+        placeholder="Motivo da rejeição"
+        className="mb-4 mt-1 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none focus:border-primary"
+      />
+      <Button
+        variant="danger"
+        className="w-full"
+        disabled={saving}
+        onClick={() => onConfirm(nota.trim() || undefined)}
+      >
+        {saving ? "Rejeitando…" : "Confirmar rejeição"}
+      </Button>
+    </Modal>
+  );
+}
+
 /** Rascunho de item no editor — valorMeta como string até o submit. */
 interface TemplateItemDraft {
   titulo: string;
@@ -717,6 +897,14 @@ function NovoTemplate({
 }) {
   const [nome, setNome] = useState(editing?.nome ?? "");
   const [tipo, setTipo] = useState<FleetChecklistTipo>(editing?.tipo ?? "DIARIO");
+  // Recorrência / validade (nível do template).
+  const [recorrente, setRecorrente] = useState(!!editing?.recorrente);
+  const [validadeDias, setValidadeDias] = useState(
+    editing?.validadeDias != null ? String(editing.validadeDias) : "",
+  );
+  const [exigirAntesViagem, setExigirAntesViagem] = useState(
+    !!editing?.exigirAntesViagem,
+  );
   const [itens, setItens] = useState<TemplateItemDraft[]>(
     editing?.itens.map((it) => ({
       titulo: it.titulo,
@@ -761,10 +949,16 @@ function NovoTemplate({
     setErro(null);
     setSalvando(true);
     try {
+      const validade =
+        recorrente && validadeDias.trim() ? Number(validadeDias) : undefined;
       const payload = {
         tipo,
         nome: nome.trim(),
         periodicidadeDias: tipo === "DIARIO" ? 1 : tipo === "CALIBRAGEM" ? 10 : undefined,
+        recorrente,
+        validadeDias:
+          validade != null && !Number.isNaN(validade) ? validade : null,
+        exigirAntesViagem,
         itens: itens.map((it, i) => {
           const numero = it.tipoCampo === "NUMERO";
           const meta = numero && it.valorMeta.trim() ? Number(it.valorMeta) : undefined;
@@ -815,6 +1009,69 @@ function NovoTemplate({
             {TIPO_LABEL[t]}
           </button>
         ))}
+      </div>
+
+      {/* Recorrência / validade do checklist (nível do template) */}
+      <div className="mb-3 space-y-2 rounded-lg border border-border p-3">
+        <button
+          type="button"
+          onClick={() => setRecorrente((v) => !v)}
+          className="flex w-full items-center justify-between text-left"
+        >
+          <span className="text-sm font-medium text-text">
+            Recorrente
+            <span className="block text-xs font-normal text-text-muted">
+              O checklist tem validade e precisa ser refeito.
+            </span>
+          </span>
+          <span
+            className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+              recorrente ? "bg-primary" : "bg-border"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition ${
+                recorrente ? "left-[22px]" : "left-0.5"
+              }`}
+            />
+          </span>
+        </button>
+
+        {recorrente && (
+          <div>
+            <label className="text-sm text-text-muted">Validade (dias)</label>
+            <Input
+              className="mt-1"
+              inputMode="numeric"
+              value={validadeDias}
+              onChange={(e) =>
+                setValidadeDias(e.target.value.replace(/[^\d]/g, ""))
+              }
+              placeholder="Ex.: 7 — o checklist vale por N dias"
+            />
+          </div>
+        )}
+
+        <button
+          type="button"
+          onClick={() => setExigirAntesViagem((v) => !v)}
+          className="flex w-full items-center justify-between text-left"
+        >
+          <span className="text-sm font-medium text-text">
+            Exigir refazer antes de cada viagem
+          </span>
+          <span
+            className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+              exigirAntesViagem ? "bg-primary" : "bg-border"
+            }`}
+          >
+            <span
+              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition ${
+                exigirAntesViagem ? "left-[22px]" : "left-0.5"
+              }`}
+            />
+          </span>
+        </button>
       </div>
 
       <label className="text-sm text-text-muted">Itens</label>
