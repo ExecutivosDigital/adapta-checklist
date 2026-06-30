@@ -55,6 +55,71 @@ export function clearAdminTenant() {
   setAdminTenantId(null);
 }
 
+/** companyId do usuário logado (resolvido junto do tenant em `/driver/me`). */
+export function getAdminCompanyId(): string | null {
+  return cachedTenant?.companyId ?? null;
+}
+
+// ───────────────────────── Conjuntos (VehicleSet) ─────────────────────────
+
+export type VehicleRole = "TRACAO" | "UNIDADE" | "REBOQUE" | "ENGATE";
+export type VehicleSetKind = "PERSISTENTE" | "EFEMERO";
+export type VehicleSetStatusEnum = "DISPONIVEL" | "EM_USO" | "INATIVO";
+
+export interface VehicleSetItem {
+  role: VehicleRole;
+  sequence: number;
+  vehicle: {
+    id: string;
+    plate: string;
+    model: string | null;
+    type: string;
+    role: VehicleRole;
+  };
+}
+
+/** Conjunto veicular (cavalo + reboques) enxuto para a UI do app. */
+export interface VehicleSetSummary {
+  id: string;
+  name: string | null;
+  kind: VehicleSetKind;
+  status: VehicleSetStatusEnum;
+  tracaoVehicleId: string | null;
+  unitCount: number | null;
+  totalAxles: number | null;
+  derivedFleetClass: { id: string; code: string; name: string } | null;
+  overrideFleetClass: { id: string; code: string; name: string } | null;
+  items: VehicleSetItem[];
+}
+
+interface VehicleSetListResponse {
+  data: VehicleSetSummary[];
+  meta?: { total: number };
+}
+
+/**
+ * Lista os conjuntos veiculares da empresa (`GET /tms/vehicle-sets`). O
+ * `companyId` vem do `/driver/me` (resolvido por `resolveAdminTenant`). Falha
+ * graciosamente (retorna `[]`) — a tela continua mostrando os veículos avulsos.
+ */
+export async function listVehicleSets(): Promise<VehicleSetSummary[]> {
+  if (MOCK) return [];
+  let companyId = cachedTenant?.companyId;
+  if (!companyId) {
+    const me = await resolveAdminTenant();
+    companyId = me?.companyId;
+  }
+  if (!companyId) return [];
+  try {
+    const { data } = await api.get<VehicleSetListResponse>("/tms/vehicle-sets", {
+      params: { companyId, limit: 100 },
+    });
+    return data.data ?? [];
+  } catch {
+    return [];
+  }
+}
+
 // ───────────────────────── A fazer (manutenção) ─────────────────────────
 
 export type MaintenanceRequestStatus =

@@ -6,6 +6,7 @@ import {
   Check,
   ClipboardList,
   Gauge,
+  Link2,
   LogOut,
   Plus,
   Trash2,
@@ -30,13 +31,17 @@ import {
   listMaintenanceRequests,
   listTemplatesAdmin,
   listVehicleAvailability,
+  listVehicleSets,
   rejectMaintenanceRequest,
   reprovarChecklist,
   resolveAdminTenant,
   type MaintenanceRequest,
   type VehicleAvailability,
+  type VehicleSetSummary,
   type VehicleStatus,
 } from "@/services/frotaAdmService";
+import { ConjuntoCard, SectionTitle } from "@/components/fleet/ConjuntoCard";
+import { conjuntoTitle, setByVehicleId, splitConjuntos } from "@/utils/vehicleSets";
 import type {
   FleetChecklist,
   FleetChecklistTemplate,
@@ -101,6 +106,16 @@ function formatBRL(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+/** Linha "Conjunto: …" exibida quando o veículo compõe um conjunto. */
+function ConjuntoLinha({ set }: { set?: VehicleSetSummary }) {
+  if (!set) return null;
+  return (
+    <p className="mt-1 flex items-center gap-1 text-xs text-primary">
+      <Link2 className="h-3.5 w-3.5" /> Conjunto: {conjuntoTitle(set)}
+    </p>
+  );
+}
+
 /** Data local (YYYY-MM-DD) de um ISO, no fuso do dispositivo — base do filtro por dia. */
 function localDay(iso: string): string {
   const d = new Date(iso);
@@ -125,6 +140,10 @@ export default function FrotaPage() {
   const [dispon, setDispon] = useState<VehicleAvailability[]>([]);
   const [templates, setTemplates] = useState<FleetChecklistTemplate[]>([]);
 
+  // Conjuntos (VehicleSet) — carregados uma vez; usados para separar a
+  // Disponibilidade e anotar Chegadas/Aprovações.
+  const [conjuntos, setConjuntos] = useState<VehicleSetSummary[]>([]);
+
   const [loading, setLoading] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [acaoId, setAcaoId] = useState<string | null>(null);
@@ -145,6 +164,15 @@ export default function FrotaPage() {
   useEffect(() => {
     void resolveAdminTenant().finally(() => setTenantReady(true));
   }, []);
+
+  // Conjuntos: carrega uma vez quando o tenant estiver pronto (falha graciosa).
+  useEffect(() => {
+    if (!tenantReady) return;
+    void listVehicleSets().then(setConjuntos);
+  }, [tenantReady]);
+
+  /** Mapa vehicleId → conjunto, para anotar Chegadas/Aprovações. */
+  const setPorVeiculo = useMemo(() => setByVehicleId(conjuntos), [conjuntos]);
 
   const carregar = useCallback(
     async (which: Tab) => {
@@ -359,6 +387,7 @@ export default function FrotaPage() {
                     {c.motoristaNome ? `${c.motoristaNome} · ` : ""}
                     {TIPO_LABEL[c.tipo]} · {c.itens.length} itens
                   </p>
+                  <ConjuntoLinha set={setPorVeiculo.get(c.vehicleId)} />
                   <Button
                     variant="outline"
                     className="mt-2 w-full"
@@ -406,6 +435,7 @@ export default function FrotaPage() {
                       {plate}
                       {model ? ` · ${model}` : ""} · {TIPO_LABEL[c.tipo]}
                     </p>
+                    <ConjuntoLinha set={setPorVeiculo.get(c.vehicleId)} />
                     <p className="mt-1 text-xs text-primary">
                       Ver itens do checklist
                     </p>
@@ -548,32 +578,69 @@ export default function FrotaPage() {
           </>
         )}
 
-        {tab === "dispon" && !loading && (
-          <ul className="space-y-2">
-            {dispon.map((v) => (
-              <li key={v.id} className="rounded-xl border border-border bg-surface p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <TruckIcon className="h-5 w-5 text-text-muted" />
-                    <div>
-                      <p className="font-semibold text-text">{v.plate}</p>
-                      <p className="text-xs text-text-muted">
-                        {v.tipo}
-                        {v.motivo ? ` · ${v.motivo}` : ""}
-                      </p>
-                    </div>
+        {tab === "dispon" && !loading && (() => {
+          if (dispon.length === 0) {
+            return <p className="text-text-muted">Nenhum veículo encontrado.</p>;
+          }
+          const { conjuntos: cjs, avulsos, byVehicleId } = splitConjuntos(
+            dispon,
+            conjuntos,
+          );
+          const statusPill = (v?: VehicleAvailability) =>
+            v ? (
+              <span
+                className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${STATUS_COLOR[v.status]}`}
+              >
+                {STATUS_VEICULO_LABEL[v.status]}
+              </span>
+            ) : null;
+          return (
+            <>
+              {cjs.length > 0 && (
+                <>
+                  <SectionTitle label="Conjuntos" count={cjs.length} />
+                  <div className="space-y-2">
+                    {cjs.map((s) => (
+                      <ConjuntoCard
+                        key={s.id}
+                        set={s}
+                        renderRight={(vid) => statusPill(byVehicleId.get(vid))}
+                      />
+                    ))}
                   </div>
-                  <span className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_COLOR[v.status]}`}>
-                    {STATUS_VEICULO_LABEL[v.status]}
-                  </span>
-                </div>
-              </li>
-            ))}
-            {dispon.length === 0 && (
-              <p className="text-text-muted">Nenhum veículo encontrado.</p>
-            )}
-          </ul>
-        )}
+                </>
+              )}
+
+              <SectionTitle label="Veículos avulsos" count={avulsos.length} />
+              <ul className="space-y-2">
+                {avulsos.map((v) => (
+                  <li key={v.id} className="rounded-xl border border-border bg-surface p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <TruckIcon className="h-5 w-5 text-text-muted" />
+                        <div>
+                          <p className="font-semibold text-text">{v.plate}</p>
+                          <p className="text-xs text-text-muted">
+                            {v.tipo}
+                            {v.motivo ? ` · ${v.motivo}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-semibold ${STATUS_COLOR[v.status]}`}
+                      >
+                        {STATUS_VEICULO_LABEL[v.status]}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+                {avulsos.length === 0 && (
+                  <p className="text-text-muted">Nenhum veículo avulso.</p>
+                )}
+              </ul>
+            </>
+          );
+        })()}
 
         {tab === "templates" && !loading && (
           <>

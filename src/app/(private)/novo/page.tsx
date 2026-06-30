@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { v4 as uuid } from "uuid";
 import { ArrowLeft } from "lucide-react";
@@ -12,17 +12,22 @@ import {
   listChecklistTemplates,
   listDriverVehicles,
 } from "@/services/checklistService";
+import {
+  listVehicleSets,
+  type VehicleSetSummary,
+} from "@/services/frotaAdmService";
 import type {
   DriverVehicle,
   FleetChecklist,
   FleetChecklistTemplate,
 } from "@/types/checklist.types";
-import { matchesSearch } from "@/utils/normalizeSearch";
+import { VehiclePicker } from "@/components/fleet/VehiclePicker";
 
 export default function NovoChecklistPage() {
   const router = useRouter();
 
   const [vehicles, setVehicles] = useState<DriverVehicle[]>([]);
+  const [conjuntos, setConjuntos] = useState<VehicleSetSummary[]>([]);
   const [templates, setTemplates] = useState<FleetChecklistTemplate[]>([]);
   const [loadingRefs, setLoadingRefs] = useState(true);
 
@@ -36,27 +41,20 @@ export default function NovoChecklistPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([listDriverVehicles(), listChecklistTemplates()])
-      .then(([v, t]) => {
+    Promise.all([
+      listDriverVehicles(),
+      listChecklistTemplates(),
+      listVehicleSets(),
+    ])
+      .then(([v, t, sets]) => {
         setVehicles(v);
         setTemplates(t);
+        setConjuntos(sets);
         if (t.length === 1) setTemplateId(t[0].id);
       })
       .catch(() => setError("Falha ao carregar veículos/templates."))
       .finally(() => setLoadingRefs(false));
   }, []);
-
-  const filteredVehicles = useMemo(() => {
-    const q = search.trim();
-    return q
-      ? vehicles.filter(
-          (v) =>
-            matchesSearch(v.plate, q) ||
-            matchesSearch(v.brand ?? "", q) ||
-            matchesSearch(v.model ?? "", q),
-        )
-      : vehicles.slice(0, 30);
-  }, [vehicles, search]);
 
   async function handleStart() {
     if (!vehicleId || !templateId) return;
@@ -117,30 +115,22 @@ export default function NovoChecklistPage() {
             )}
           </div>
 
-          <label className="text-sm text-text-muted">Veículo (placa)</label>
+          <label className="text-sm text-text-muted">Veículo / conjunto (placa)</label>
           <Input
             className="mt-1"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Buscar placa…"
           />
-          <ul className="mt-2 max-h-72 space-y-1 overflow-auto">
-            {filteredVehicles.map((v) => (
-              <li key={v.id}>
-                <button
-                  onClick={() => setVehicleId(v.id)}
-                  className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left transition ${
-                    vehicleId === v.id ? "border-primary bg-primary/10" : "border-border"
-                  }`}
-                >
-                  <span className="font-semibold text-text">{v.plate}</span>
-                  <span className="text-xs text-text-muted">
-                    {[v.brand, v.model].filter(Boolean).join(" ")}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <div className="max-h-80 overflow-auto">
+            <VehiclePicker
+              vehicles={vehicles}
+              conjuntos={conjuntos}
+              search={search}
+              value={vehicleId}
+              onChange={setVehicleId}
+            />
+          </div>
 
           <div className="mt-4">
             <label className="text-sm text-text-muted">Cont/Km (opcional)</label>

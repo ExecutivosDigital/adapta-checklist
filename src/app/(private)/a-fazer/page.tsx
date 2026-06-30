@@ -6,8 +6,12 @@ import { ArrowLeft, Mic, MicOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createAFazer, listDriverVehicles } from "@/services/checklistService";
+import {
+  listVehicleSets,
+  type VehicleSetSummary,
+} from "@/services/frotaAdmService";
 import type { DriverVehicle } from "@/types/checklist.types";
-import { matchesSearch } from "@/utils/normalizeSearch";
+import { VehiclePicker } from "@/components/fleet/VehiclePicker";
 
 /** Reconhecimento de fala do navegador (Web Speech API) — sem chave externa. */
 function getSpeechRecognition(): (new () => SpeechRecognitionLike) | null {
@@ -32,6 +36,7 @@ interface SpeechRecognitionLike {
 export default function AFazerPage() {
   const router = useRouter();
   const [vehicles, setVehicles] = useState<DriverVehicle[]>([]);
+  const [conjuntos, setConjuntos] = useState<VehicleSetSummary[]>([]);
   const [search, setSearch] = useState("");
   const [vehicleId, setVehicleId] = useState("");
   const [description, setDescription] = useState("");
@@ -44,19 +49,8 @@ export default function AFazerPage() {
     listDriverVehicles()
       .then(setVehicles)
       .catch(() => setError("Falha ao carregar veículos (offline?)."));
+    listVehicleSets().then(setConjuntos);
   }, []);
-
-  const filtered = useMemo(() => {
-    const q = search.trim();
-    return q
-      ? vehicles.filter(
-          (v) =>
-            matchesSearch(v.plate, q) ||
-            matchesSearch(v.brand ?? "", q) ||
-            matchesSearch(v.model ?? "", q),
-        )
-      : vehicles.slice(0, 30);
-  }, [vehicles, search]);
 
   const speechAvailable = useMemo(() => getSpeechRecognition() != null, []);
 
@@ -110,30 +104,22 @@ export default function AFazerPage() {
       </header>
       {error && <p className="mb-3 text-red-600">{error}</p>}
 
-      <label className="text-sm text-text-muted">Veículo (placa)</label>
+      <label className="text-sm text-text-muted">Veículo / conjunto (placa)</label>
       <Input
         className="mt-1"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         placeholder="Buscar placa…"
       />
-      <ul className="mt-2 max-h-48 space-y-1 overflow-auto">
-        {filtered.map((v) => (
-          <li key={v.id}>
-            <button
-              onClick={() => setVehicleId(v.id)}
-              className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left transition ${
-                vehicleId === v.id ? "border-primary bg-primary/10" : "border-border"
-              }`}
-            >
-              <span className="font-semibold text-text">{v.plate}</span>
-              <span className="text-xs text-text-muted">
-                {[v.brand, v.model].filter(Boolean).join(" ")}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
+      <div className="max-h-56 overflow-auto">
+        <VehiclePicker
+          vehicles={vehicles}
+          conjuntos={conjuntos}
+          search={search}
+          value={vehicleId}
+          onChange={setVehicleId}
+        />
+      </div>
 
       <div className="mt-4">
         <div className="mb-1 flex items-center justify-between">

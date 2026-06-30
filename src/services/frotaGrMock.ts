@@ -81,16 +81,6 @@ export const MOCK_DISPONIBILIDADE: DisponVeiculo[] = [
   { placa: "AUG9690", tipo: "Carreta", status: "BLOQUEADO", obs: "Sinistro — pequena monta" },
 ];
 
-// ── Frota: conjuntos aguardando checklist da gerenciadora (import manual) ──
-export interface GerenciadoraPendente {
-  cavalo: string;
-  carreta: string;
-  gerenciadora: string;
-}
-export const MOCK_GERENCIADORA: GerenciadoraPendente[] = [
-  { cavalo: "KAF2D34", carreta: "MGY3388", gerenciadora: "Raster" },
-];
-
 export const STATUS_VEICULO_LABEL: Record<DisponVeiculo["status"], string> = {
   DISPONIVEL: "Disponível",
   MANUTENCAO: "Manutenção",
