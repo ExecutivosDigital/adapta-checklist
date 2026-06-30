@@ -2,7 +2,7 @@
 
 import { use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, CalendarDays, Gauge, Truck, User } from "lucide-react";
+import { ArrowLeft, CalendarCheck, CalendarDays, Gauge, Truck, User } from "lucide-react";
 import { ChecklistFill } from "@/components/checklist/ChecklistFill";
 import { Badge } from "@/components/ui/badge";
 import { getChecklist } from "@/services/checklistService";
@@ -110,6 +110,20 @@ function ChecklistHeader({ checklist: c }: { checklist: FleetChecklist }) {
         </Badge>
       </div>
 
+      {/* Vigência: badge "Vencido" ou "Válido até {data}" quando o checklist tem validade. */}
+      {(c.vencido || c.validoAte) && (
+        <div className="mb-3">
+          {c.vencido ? (
+            <Badge variant="destructive">Vencido</Badge>
+          ) : (
+            <span className="inline-flex items-center gap-1 rounded-md border border-border px-2.5 py-0.5 text-xs font-semibold text-text-muted">
+              <CalendarCheck className="h-3.5 w-3.5" />
+              Válido até {new Date(c.validoAte!).toLocaleDateString("pt-BR")}
+            </span>
+          )}
+        </div>
+      )}
+
       <dl className="grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
         <InfoRow icon={User} label="Motorista" value={c.motoristaNome ?? "—"} />
         <InfoRow icon={Truck} label="Veículo" value={plate} />
@@ -124,6 +138,13 @@ function ChecklistHeader({ checklist: c }: { checklist: FleetChecklist }) {
           value={c.odometer != null ? `${c.odometer.toLocaleString("pt-BR")} km` : "—"}
         />
       </dl>
+
+      {c.exigirAntesViagem && (
+        <p className="mt-3 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-700">
+          <CalendarCheck className="h-3.5 w-3.5" />
+          Exigir refazer antes de cada viagem
+        </p>
+      )}
     </div>
   );
 }

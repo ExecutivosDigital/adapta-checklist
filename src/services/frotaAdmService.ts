@@ -217,6 +217,12 @@ export interface CreateTemplateInput {
   tipo: FleetChecklistTipo;
   nome: string;
   periodicidadeDias?: number;
+  /** Checklist recorrente (vale por N dias e precisa ser refeito). */
+  recorrente?: boolean;
+  /** Validade em dias do checklist concluído (quando `recorrente`). */
+  validadeDias?: number | null;
+  /** Exigir refazer o checklist antes de cada viagem. */
+  exigirAntesViagem?: boolean;
   itens: {
     codigo: string;
     titulo: string;

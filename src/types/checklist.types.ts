@@ -44,6 +44,12 @@ export interface FleetChecklistTemplate {
   nome: string;
   periodicidadeDias: number | null;
   itens: FleetChecklistTemplateItem[];
+  /** Checklist recorrente (vale por N dias e precisa ser refeito). */
+  recorrente?: boolean;
+  /** Validade em dias do checklist concluído (quando `recorrente`). */
+  validadeDias?: number | null;
+  /** Exigir refazer o checklist antes de cada viagem. */
+  exigirAntesViagem?: boolean;
 }
 
 export interface FleetChecklistItem {
@@ -84,6 +90,17 @@ export interface FleetChecklist {
   } | null;
   /** Nome do motorista enriquecido pelo backend (list/get). Opcional. */
   motoristaNome?: string | null;
+  /**
+   * Vigência/recorrência herdada do template (list/get). Opcionais — o backend
+   * pode ainda não enviar; trate ausência de forma defensiva.
+   */
+  validadeDias?: number | null;
+  /** ISO da data até a qual o checklist é válido (quando tem validade). */
+  validoAte?: string | null;
+  /** `true` quando o checklist passou da validade. */
+  vencido?: boolean;
+  recorrente?: boolean;
+  exigirAntesViagem?: boolean;
 }
 
 // ── Inputs ──
